@@ -2,14 +2,14 @@
 
 Members-only portal for the EduMoon team and Student Leads: tasks, daily check-ins, approvals and a worked/missed calendar.
 
-Phase 1: login, people and roles, My page, check-in, approvals, team view, admin.
-Coming next: event logs with points, leaderboard, recruitment tracker, home feed and ideas board, Export for Chapters.
+Includes: Home (announcements, Coming up, top Student Leads, recent wins, ideas board), My page, check-in, Student Lead events with points and collabs, leaderboard with badges, approvals, team view, recruitment tracker, admin, and Export for Chapters.
 
 ## One-time setup (about 15 minutes)
 
 ### 1. Create the database
 1. Go to supabase.com and create a **new project** (for example `edumoon-team`). Keep it separate from the app's project.
 2. Open **SQL Editor**, click **New query**, paste everything from `setup/setup.sql`, and click **Run**. Run it only once.
+3. Then do the same with `setup/upgrade-2.sql` (events, points, leaderboard, Home, recruitment).
 3. Open **Project Settings > API**. Copy the **Project URL** and the **anon public** key.
 
 ### 2. Connect the website
@@ -49,6 +49,9 @@ Check-in reasons (exams, family, not well) are seen only by the person, admins, 
 - **Waiting:** submitted but not approved yet
 - **Excused:** exams, family, not well, no task given, or a team off day
 - **Missed:** nothing logged
+
+## Weekly: update the Chapters site
+Admin > Export for Chapters > Copy. In the chapters repo, edit `assets/data.js` and replace the `window.POINTS`, `window.LEADERBOARD` and `window.ACTIVITY` blocks with the copied text.
 
 ## Updating
 Send the update zip's files to GitHub the same way. The `?v=` numbers in `index.html` make phones load the new version.

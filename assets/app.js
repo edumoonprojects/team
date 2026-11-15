@@ -13,7 +13,7 @@
   var $toast = document.getElementById('toast');
 
   var sb = null;
-  var S = { user: null, me: null, people: [], byId: {}, offDays: {}, calMonth: {}, routed: false };
+  var S = { user: null, me: null, people: [], byId: {}, offDays: {}, calMonth: {}, routed: false, rules: {}, ruleList: [], lbPeriod: 'month', evFilter: 'all' };
   var seq = 0;
 
   // ---------- small helpers ----------
@@ -28,7 +28,14 @@
     var b = p.length > 1 ? p[p.length - 1].charAt(0) : '';
     return (a + b).toUpperCase();
   }
-  function first(name) { return String(name || '').trim().split(/\s+/)[0] || ''; }
+  // short display name: the person's short name if set, else the first word that is not an initial
+  function first(name) {
+    var p = S.byName && S.byName[name];
+    if (p && p.short_name) return p.short_name;
+    var parts = String(name || '').trim().split(/\s+/);
+    for (var i = 0; i < parts.length; i++) { if (parts[i].replace(/\./g, '').length > 2) return parts[i]; }
+    return parts[0] || '';
+  }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function dstr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function today() { return dstr(new Date()); }
@@ -85,6 +92,12 @@
     team: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M2.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5M15.5 14.2c3 .2 6 2.3 6 5.8"/></svg>',
     approvals: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>',
     admin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="#fff"/><circle cx="15" cy="12" r="2" fill="#fff"/><circle cx="7" cy="18" r="2" fill="#fff"/></svg>',
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>',
+    events: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M12 13.5l1 2 2.2.3-1.6 1.5.4 2.2-2-1.1-2 1.1.4-2.2-1.6-1.5 2.2-.3z"/></svg>',
+    trophy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>',
+    recruit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="4"/><path d="M3 21c0-3.9 3.1-7 7-7 1.6 0 3 .5 4.2 1.3M19 15v6M16 18h6"/></svg>',
+    more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+    up: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>',
     plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
     chev: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
     left: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>'
@@ -113,6 +126,45 @@
     done: { label: 'Done', cls: 'ok' }
   };
 
+  var CLUBS = ['Coding', 'English', 'Career & Skills', 'Social Media', 'Project Club', 'Entrepreneurship', 'Other'];
+  var EV_STATUS = {
+    pending: '<span class="chip warn">Waiting for approval</span>',
+    approved: '',
+    sent_back: '<span class="chip bad">Sent back</span>'
+  };
+  var RECRUIT = {
+    contacted: { label: 'Contacted', cls: '' },
+    interested: { label: 'Interested', cls: 'warn' },
+    onboarded: { label: 'Onboarded', cls: 'ok' },
+    not_interested: { label: 'Not interested', cls: 'bad' }
+  };
+  function ruleLabel(t) { return (S.rules[t] && S.rules[t].label) || t; }
+  function rulePoints(t) { return (S.rules[t] && S.rules[t].points) || 0; }
+  function evPoints(e) { return e.points != null ? e.points : rulePoints(e.type); }
+  function creditedIds(e) { return [e.person].concat(e.collab_with || []); }
+  // points per person from approved events (collab partners get full points too)
+  function tally(events) {
+    var t = {};
+    events.forEach(function (e) {
+      if (e.status !== 'approved') return;
+      creditedIds(e).forEach(function (pid) {
+        var r = t[pid] || (t[pid] = { points: 0, events: 0, reached: 0, collabs: 0, inperson: 0 });
+        r.points += evPoints(e);
+        if (e.type !== 'whatsapp' && e.type !== 'streak') r.events++;
+        r.reached += e.attendees || 0;
+        if ((e.collab_with || []).length) r.collabs++;
+        if (e.type === 'inperson') r.inperson++;
+      });
+    });
+    return t;
+  }
+  function leadsRanked(events) {
+    var t = tally(events);
+    return S.people.filter(function (p) { return p.active && p.is_student_lead; })
+      .map(function (p) { return { p: p, s: t[p.id] || { points: 0, events: 0, reached: 0, collabs: 0, inperson: 0 } }; })
+      .sort(function (a, b) { return b.s.points - a.s.points || b.s.events - a.s.events || a.p.name.localeCompare(b.p.name); });
+  }
+
   // ---------- permissions (mirror of the database rules) ----------
   function canSee(p) {
     var m = S.me; if (!p || !m) return false;
@@ -132,6 +184,8 @@
   }
   function isLeadOnly(p) { return p.is_student_lead && !p.is_team && !p.is_admin; }
   function canApprove() { return !!(S.me && (S.me.is_admin || S.me.is_sl_head)); }
+  function canVerifyEvent(p) { return !!(S.me && p && S.me.is_admin && p.id !== S.me.id); }
+  function canRecruit() { return !!(S.me && (S.me.is_admin || S.me.is_sl_head)); }
   function hasTeamView() { return !!(S.me && (S.me.is_admin || S.me.is_team || S.me.is_sl_head)); }
   function visiblePeople() {
     return S.people.filter(function (p) { return p.id !== S.me.id && p.active && canSee(p); });
@@ -168,7 +222,7 @@
       var me = await q(sb.from('profiles').select('*').eq('user_id', user.id).maybeSingle());
       if (!me || !me.active) { renderNoProfile(user.email); return; }
       S.me = me;
-      await Promise.all([loadPeople(), loadOffDays()]);
+      await Promise.all([loadPeople(), loadOffDays(), loadRules()]);
     } catch (e) {
       $view.innerHTML = '<div class="card err">' + esc(errMsg(e)) + '</div>';
       return;
@@ -176,15 +230,23 @@
     renderChrome();
     if (!S.routed) { window.addEventListener('hashchange', route); S.routed = true; }
     if (!location.hash || location.hash === '#' || location.hash === '#/') {
-      location.hash = canApprove() ? '#/approvals' : '#/me';
+      location.hash = canApprove() ? '#/approvals' : '#/home';
     } else { route(); }
   }
 
   async function loadPeople() {
     var rows = await q(sb.from('profiles').select('*').order('name'));
-    S.people = rows; S.byId = {};
-    rows.forEach(function (p) { S.byId[p.id] = p; });
+    S.people = rows; S.byId = {}; S.byName = {};
+    rows.forEach(function (p) { S.byId[p.id] = p; S.byName[p.name] = p; });
     if (S.me && S.byId[S.me.id]) S.me = S.byId[S.me.id];
+  }
+  async function loadRules() {
+    S.rules = {}; S.ruleList = [];
+    try {
+      var rows = await q(sb.from('point_rules').select('*').order('sort'));
+      S.ruleList = rows;
+      rows.forEach(function (r) { S.rules[r.type] = r; });
+    } catch (e) { /* upgrade-2.sql not run yet */ S.noUpgrade = true; }
   }
   async function loadOffDays() {
     var rows = await q(sb.from('off_days').select('*'));
@@ -243,23 +305,42 @@
     $view.className = 'view';
     $top.hidden = false;
     $top.innerHTML =
-      '<a class="brand" href="#/me"><img src="assets/logo.png" alt=""><b>EduMoon</b><span>Team</span></a>' +
+      '<a class="brand" href="#/home"><img src="assets/logo.png" alt=""><b>EduMoon</b><span>Team</span></a>' +
       '<div class="spacer"></div>' +
       '<div class="who"><span class="nm">' + esc(first(S.me.name)) + '</span>' +
       '<button class="btn sm" data-action="signout">Sign out</button></div>';
-    var items = [
-      ['me', 'My page', ICON.me],
-      ['checkin', 'Check-in', ICON.checkin]
-    ];
-    if (hasTeamView()) items.push(['team', 'Team', ICON.team]);
-    if (canApprove()) items.push(['approvals', 'Approvals', ICON.approvals]);
-    if (S.me.is_admin) items.push(['admin', 'Admin', ICON.admin]);
     $nav.hidden = false;
+    var items = navItems();
+    // on phones only the first four show; the rest sit under "More"
+    var main = items.filter(function (it) { return it[3]; }).slice(0, 4);
+    var mainKeys = main.map(function (it) { return it[0]; });
     $nav.innerHTML = items.map(function (it) {
-      return '<a href="#/' + it[0] + '" data-nav="' + it[0] + '">' + it[2] + '<span>' + it[1] + '</span>' +
+      var extra = mainKeys.indexOf(it[0]) < 0 ? ' class="extra"' : '';
+      return '<a href="#/' + it[0] + '" data-nav="' + it[0] + '"' + extra + '>' + it[2] + '<span>' + it[1] + '</span>' +
         (it[0] === 'approvals' ? '<span class="badge" id="appr-badge" hidden></span>' : '') + '</a>';
-    }).join('');
+    }).join('') +
+      (items.length > main.length ? '<a href="#" class="more-btn" data-action="more">' + ICON.more + '<span>More</span></a>' : '');
     refreshBadge();
+  }
+  // [key, label, icon, show in the phone bar]
+  function navItems() {
+    var items = [['home', 'Home', ICON.home, true]];
+    if (canApprove()) items.push(['approvals', 'Approvals', ICON.approvals, true]);
+    items.push(['me', 'My page', ICON.me, true]);
+    items.push(['checkin', 'Check-in', ICON.checkin, true]);
+    items.push(['events', 'Events', ICON.events, !canApprove()]);
+    items.push(['leaderboard', 'Leaderboard', ICON.trophy, false]);
+    if (hasTeamView()) items.push(['team', 'Team', ICON.team, false]);
+    if (canRecruit()) items.push(['recruit', 'Recruit', ICON.recruit, false]);
+    if (S.me.is_admin) items.push(['admin', 'Admin', ICON.admin, false]);
+    return items;
+  }
+  function openMore() {
+    $modal.innerHTML = '<div class="modal-bg" data-action="modal-close-bg"><div class="modal stack" role="dialog" aria-modal="true" aria-labelledby="more-h">' +
+      '<div class="row between"><h2 id="more-h" style="font-size:20px">Menu</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
+      '<div class="more-grid">' + navItems().map(function (it) {
+        return '<a href="#/' + it[0] + '" class="more-item">' + it[2] + '<span>' + it[1] + '</span></a>';
+      }).join('') + '</div></div></div>';
   }
   function markNav(key) {
     [].forEach.call($nav.querySelectorAll('a'), function (a) {
@@ -282,12 +363,20 @@
     if (!S.me) return;
     closeModal();
     var parts = location.hash.replace(/^#\/?/, '').split('/');
-    var key = parts[0] || 'me';
+    var key = parts[0] || 'home';
     markNav(key === 'person' ? 'team' : key);
     window.scrollTo(0, 0);
     var my = ++seq;
     var go;
-    if (key === 'me') go = viewPerson(S.me.id, my);
+    if (S.noUpgrade && ['home', 'events', 'leaderboard', 'recruit'].indexOf(key) >= 0) {
+      $view.innerHTML = '<div class="card stack"><h2>One more setup step</h2><p class="muted" style="margin:0">Run <b>setup/upgrade-2.sql</b> in the Supabase SQL Editor once, then refresh this page.</p></div>';
+      return;
+    }
+    if (key === 'home') go = viewHome(my);
+    else if (key === 'events') go = viewEvents(my);
+    else if (key === 'leaderboard') go = viewLeaderboard(my);
+    else if (key === 'recruit' && canRecruit()) go = viewRecruit(my);
+    else if (key === 'me') go = viewPerson(S.me.id, my);
     else if (key === 'person') go = viewPerson(parts[1], my);
     else if (key === 'checkin') go = viewCheckin(my);
     else if (key === 'team' && hasTeamView()) go = viewTeam(my);
@@ -302,8 +391,12 @@
   function rerender() { route(); refreshBadge(); }
 
   // ---------- day status for the calendar ----------
-  function buildDayStatus(person, checkins, tasks) {
+  function buildDayStatus(person, checkins, tasks, events) {
     var ci = {}, sub = {}, done = {};
+    (events || []).forEach(function (e) {
+      if (e.status === 'approved') done[e.day] = true;
+      else if (e.status === 'pending' && e.person === person.id) sub[e.day] = true;
+    });
     checkins.forEach(function (c) { ci[c.day] = c; });
     tasks.forEach(function (t) {
       var d = tsDay(t.submitted_at);
@@ -374,11 +467,13 @@
 
     var res = await Promise.all([
       q(sb.from('tasks').select('*').eq('assignee', pid).order('created_at', { ascending: false }).limit(400)),
-      showCal ? q(sb.from('checkins').select('*').eq('person', pid).gte('day', from).lte('day', to).order('day', { ascending: false })) : Promise.resolve([])
+      showCal ? q(sb.from('checkins').select('*').eq('person', pid).gte('day', from).lte('day', to).order('day', { ascending: false })) : Promise.resolve([]),
+      (p.is_student_lead && !S.noUpgrade) ? q(sb.from('events').select('*').or('person.eq.' + pid + ',collab_with.cs.{' + pid + '}').order('day', { ascending: false }).limit(500)) : Promise.resolve([]),
+      (p.is_student_lead && !S.noUpgrade) ? q(sb.from('events').select('person,collab_with,status,type,points,attendees,day').eq('status', 'approved').gte('day', today().slice(0, 7) + '-01')) : Promise.resolve([])
     ]);
     if (my !== seq) return;
-    var tasks = res[0], checkins = res[1];
-    var statusOf = buildDayStatus(p, checkins, tasks);
+    var tasks = res[0], checkins = res[1], myEvents = res[2], monthEvents = res[3];
+    var statusOf = buildDayStatus(p, checkins, tasks, myEvents);
     var thisMonth = monthCounts(statusOf, today().slice(0, 7));
 
     var open = tasks.filter(function (t) { return t.status === 'todo' || t.status === 'in_progress' || t.status === 'waiting'; });
@@ -434,6 +529,8 @@
         '<div class="stat"><b>' + submitted.length + '</b><span>For approval</span></div></div>';
     }
     h += '</section>';
+
+    if (p.is_student_lead && !S.noUpgrade) h += leadBlock(p, self, myEvents, monthEvents);
 
     // today's check-in card for myself
     if (self) {
@@ -711,9 +808,11 @@
   async function loadPending() {
     var res = await Promise.all([
       q(sb.from('checkins').select('*').eq('status', 'pending').order('day', { ascending: false }).limit(300)),
-      q(sb.from('tasks').select('*').eq('status', 'submitted').order('submitted_at').limit(300))
+      q(sb.from('tasks').select('*').eq('status', 'submitted').order('submitted_at').limit(300)),
+      (S.me.is_admin && !S.noUpgrade) ? q(sb.from('events').select('*').eq('status', 'pending').order('created_at').limit(300)) : Promise.resolve([])
     ]);
     var items = [];
+    res[2].forEach(function (e) { var p = S.byId[e.person]; if (canVerifyEvent(p)) items.push({ type: 'ev', row: e, p: p, at: e.created_at }); });
     res[0].forEach(function (c) { var p = S.byId[c.person]; if (canVerify(p)) items.push({ type: 'ci', row: c, p: p, at: c.updated_at }); });
     res[1].forEach(function (t) { var p = S.byId[t.assignee]; if (canVerify(p)) items.push({ type: 'task', row: t, p: p, at: t.submitted_at }); });
     items.sort(function (a, b) { return (a.at || '') < (b.at || '') ? -1 : 1; });
@@ -724,7 +823,8 @@
     var res = await Promise.all([
       loadPending(),
       q(sb.from('checkins').select('*').in('status', ['approved', 'sent_back']).not('verified_at', 'is', null).order('verified_at', { ascending: false }).limit(25)),
-      q(sb.from('tasks').select('*').eq('status', 'done').not('verified_at', 'is', null).order('verified_at', { ascending: false }).limit(25))
+      q(sb.from('tasks').select('*').eq('status', 'done').not('verified_at', 'is', null).order('verified_at', { ascending: false }).limit(25)),
+      S.noUpgrade ? Promise.resolve([]) : q(sb.from('events').select('*').in('status', ['approved', 'sent_back']).not('verified_at', 'is', null).order('verified_at', { ascending: false }).limit(25))
     ]);
     if (my !== seq) return;
     var items = res[0];
@@ -732,7 +832,8 @@
     var recent = [];
     res[1].forEach(function (c) { recent.push({ type: 'ci', row: c, p: S.byId[c.person], at: c.verified_at }); });
     res[2].forEach(function (t) { recent.push({ type: 'task', row: t, p: S.byId[t.assignee], at: t.verified_at }); });
-    recent = recent.filter(function (r) { return r.p && canSee(r.p); })
+    res[3].forEach(function (e) { recent.push({ type: 'ev', row: e, p: S.byId[e.person], at: e.verified_at, open: true }); });
+    recent = recent.filter(function (r) { return r.p && (r.open || canSee(r.p)); })
       .sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 25);
 
     var h = '<div class="stack"><div><div class="muted small" style="font-weight:600">Hello, ' + esc(first(S.me.name)) + '</div>' +
@@ -746,8 +847,9 @@
 
     h += '<div class="sec-h"><h2>Recently verified</h2></div><div class="card flush list">' +
       (recent.length ? recent.map(function (r) {
-        var what = r.type === 'ci' ? (KINDS[r.row.kind] || { label: r.row.kind }).label + (r.row.detail ? ': ' + r.row.detail : '') : r.row.title;
-        var chip = r.type === 'ci' && r.row.status === 'sent_back' ?
+        var what = r.type === 'ci' ? (KINDS[r.row.kind] || { label: r.row.kind }).label + (r.row.detail ? ': ' + r.row.detail : '') :
+          r.type === 'ev' ? 'Event: ' + r.row.title + (r.row.status === 'approved' ? ' (+' + evPoints(r.row) + ')' : '') : r.row.title;
+        var chip = (r.type === 'ci' || r.type === 'ev') && r.row.status === 'sent_back' ?
           '<span class="chip bad">Sent back by ' + esc(firstOf(r.row.verified_by)) + ' · ' + esc(fmtWhen(r.at)) + '</span>' :
           '<span class="chip ok">Verified by ' + esc(firstOf(r.row.verified_by)) + ' · ' + esc(fmtWhen(r.at)) + '</span>';
         return '<div class="task"><div style="font-weight:600;font-size:14.5px">' + esc(first(r.p.name)) + ' · ' + esc(what) + '</div><div>' + chip + '</div></div>';
@@ -757,7 +859,15 @@
 
   function approvalCard(i) {
     var p = i.p, r = i.row, head, body;
-    if (i.type === 'ci') {
+    if (i.type === 'ev') {
+      var partners = (r.collab_with || []).map(function (id) { return first(nameOf(id)); });
+      head = 'Event · ' + fmtDay(r.day);
+      body = '<div style="font-size:15px;font-weight:600">' + esc(r.title) + '</div>' +
+        '<div class="muted small">' + esc([ruleLabel(r.type) + ' (+' + rulePoints(r.type) + ')', r.club, r.attendees != null ? r.attendees + ' joined' : ''].filter(Boolean).join(' · ')) + '</div>' +
+        (partners.length ? '<div class="small">Collab with ' + esc(partners.join(', ')) + '. They get the points too.</div>' : '') +
+        (r.link ? '<a class="linkbtn" style="align-self:flex-start" href="' + esc(/^https?:\/\//i.test(r.link) ? r.link : 'https://' + r.link) + '" target="_blank" rel="noopener">Open link</a>' : '') +
+        (r.note ? '<div class="muted small">Note: ' + esc(r.note) + '</div>' : '');
+    } else if (i.type === 'ci') {
       var k = KINDS[r.kind] || { label: r.kind };
       head = 'Check-in · ' + fmtDay(r.day);
       body = '<div style="font-size:15px;font-weight:500">' + esc(k.label) + (r.detail ? ': ' + esc(r.detail) : '') + '</div>' +
@@ -769,14 +879,16 @@
         '<button class="linkbtn" style="align-self:flex-start" data-action="comments" data-id="' + r.id + '">See comments and links</button>' +
         '<div class="comments" data-box="comments-' + r.id + '" hidden></div>';
     }
-    var a = i.type === 'ci' ? 'ci' : 'task';
+    var a = i.type;
+    var boxPre = a === 'ci' ? 'ci-back-' : a === 'ev' ? 'ev-back-' : 'back-';
+    var inPre = a === 'ci' ? 'fb-' : a === 'ev' ? 'eb-' : 'bk-';
     return '<div class="card stack" style="gap:10px"><div class="row"><div class="av">' + esc(initials(p.name)) + '</div><div style="min-width:0">' +
-      '<div style="font-weight:600">' + esc(p.name) + '</div><div class="muted tiny">' + esc((isLeadOnly(p) ? 'Student Lead' : 'Team') + ' · ' + head) + '</div></div></div>' +
+      '<div style="font-weight:600">' + esc(p.name) + '</div><div class="muted tiny">' + esc((isLeadOnly(p) || i.type === 'ev' ? 'Student Lead' : 'Team') + ' · ' + head) + '</div></div></div>' +
       body +
       '<div class="grid2"><button class="btn primary" data-action="' + a + '-approve" data-id="' + r.id + '">Approve</button>' +
       '<button class="btn danger" data-action="' + a + '-back" data-id="' + r.id + '">Send back</button></div>' +
-      '<div class="inline-box" data-box="' + (a === 'ci' ? 'ci-back-' : 'back-') + r.id + '" hidden><label class="lbl" for="' + (a === 'ci' ? 'fb-' : 'bk-') + r.id + '">What should they fix?</label>' +
-      '<input class="input" id="' + (a === 'ci' ? 'fb-' : 'bk-') + r.id + '" maxlength="500"><button class="btn sm danger" data-action="' + a + '-back-confirm" data-id="' + r.id + '">Send back</button></div></div>';
+      '<div class="inline-box" data-box="' + boxPre + r.id + '" hidden><label class="lbl" for="' + inPre + r.id + '">What should they fix?</label>' +
+      '<input class="input" id="' + inPre + r.id + '" maxlength="500"><button class="btn sm danger" data-action="' + a + '-back-confirm" data-id="' + r.id + '">Send back</button></div></div>';
   }
 
   // ---------- team ----------
@@ -860,6 +972,15 @@
           '<div class="row wrap" style="gap:6px">' + roles(p) + '</div></div>' +
           '<button class="btn sm" data-action="person-edit" data-id="' + p.id + '">Edit</button></div>';
       }).join('') + '</div>' +
+      (S.noUpgrade ? '<div class="card" style="background:var(--warnbg)"><b>One more setup step:</b> run setup/upgrade-2.sql in Supabase to turn on events, points, leaderboard, Home and recruitment.</div>' :
+      '<div class="sec-h"><h2>Points</h2></div><form class="card stack" id="rules-form" novalidate>' +
+      '<p class="muted small" style="margin:0">Points a Student Lead earns when you approve each kind of activity. Changes apply to events approved from now on.</p>' +
+      S.ruleList.map(function (r) {
+        return '<div class="row between"><label for="rule-' + r.type + '" style="font-weight:600">' + esc(r.label) + '</label>' +
+          '<input class="input" id="rule-' + r.type + '" data-type="' + r.type + '" type="number" min="0" max="1000" value="' + r.points + '" style="width:96px"></div>';
+      }).join('') + '<div class="err" id="rules-err" role="alert"></div><button class="btn primary" type="submit">Save points</button></form>' +
+      '<div class="sec-h"><h2>Chapters site</h2></div><div class="card stack"><p class="muted small" style="margin:0">Once a week, export approved events and paste them into the Chapters site so its leaderboard matches.</p>' +
+      '<button class="btn sky" data-action="export">Export for Chapters</button></div>') +
       '<div class="sec-h"><h2>Team off days</h2></div><div class="card stack">' +
       '<p class="muted small" style="margin:0">Festivals or holidays when nobody is expected to work. These days count as excused for everyone.</p>' +
       '<form id="off-form" class="row wrap" novalidate><label class="sr" for="off-day">Date</label><input class="input" id="off-day" type="date" style="width:auto;flex:1;min-width:150px">' +
@@ -872,6 +993,22 @@
       '</div></div>';
     $view.innerHTML = h;
 
+    var rf = document.getElementById('rules-form');
+    if (rf) rf.addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var $e = document.getElementById('rules-err'); $e.textContent = '';
+      var inputs = [].slice.call(rf.querySelectorAll('input[data-type]'));
+      for (var i = 0; i < inputs.length; i++) {
+        var v = +inputs[i].value;
+        if (inputs[i].value === '' || isNaN(v) || v < 0 || v > 1000) { $e.textContent = 'Points must be a number from 0 to 1000.'; inputs[i].focus(); return; }
+      }
+      try {
+        for (var j = 0; j < inputs.length; j++) {
+          await q(sb.from('point_rules').update({ points: Math.round(+inputs[j].value) }).eq('type', inputs[j].getAttribute('data-type')));
+        }
+      } catch (er) { $e.textContent = errMsg(er); return; }
+      await loadRules(); toast('Points saved');
+    });
     document.getElementById('off-form').addEventListener('submit', async function (ev) {
       ev.preventDefault();
       var d = document.getElementById('off-day').value, n = document.getElementById('off-note').value.trim();
@@ -890,6 +1027,7 @@
     $modal.innerHTML = '<div class="modal-bg" data-action="modal-close-bg"><form class="modal stack" id="person-form" novalidate role="dialog" aria-modal="true" aria-labelledby="pf-h">' +
       '<div class="row between"><h2 id="pf-h" style="font-size:20px">' + (id ? 'Edit person' : 'Add person') + '</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
       '<div class="field"><label class="lbl" for="pf-name">Full name</label><input class="input" id="pf-name" maxlength="120" value="' + esc(p.name) + '"></div>' +
+      '<div class="field"><label class="lbl" for="pf-short">Short name (what the portal calls them)</label><input class="input" id="pf-short" maxlength="40" placeholder="e.g. Harshita" value="' + esc(p.short_name) + '"></div>' +
       '<div class="field"><label class="lbl" for="pf-email">Email (used to log in)</label><input class="input" id="pf-email" type="email" value="' + esc(p.email) + '"></div>' +
       '<div class="field"><label class="lbl" for="pf-title">Role or work (shown on their card)</label><input class="input" id="pf-title" maxlength="120" placeholder="e.g. Video editor" value="' + esc(p.title) + '"></div>' +
       '<div class="field"><label class="lbl" for="pf-chapter">College (for Student Leads)</label><input class="input" id="pf-chapter" maxlength="120" value="' + esc(p.chapter) + '"></div>' +
@@ -912,6 +1050,7 @@
         is_team: c('is_team'), is_student_lead: c('is_student_lead'), is_sl_head: c('is_sl_head'),
         is_admin: c('is_admin'), is_private: c('is_private'), active: c('active')
       };
+      if (!S.noUpgrade) row.short_name = v('short') || null;
       if (!row.name) { $e.textContent = 'Enter a name.'; return; }
       if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) { $e.textContent = 'That email does not look right.'; return; }
       if (id === S.me.id && !row.is_admin) { $e.textContent = 'You cannot remove your own admin access.'; return; }
@@ -923,6 +1062,444 @@
       }
       closeModal(); toast('Saved'); await loadPeople(); renderChrome(); rerender();
     });
+  }
+
+  // ---------- Student Lead block on a person's page ----------
+  var BADGES = [
+    ['first', 'First event', function (s) { return s.events >= 1; }],
+    ['five', '5 events', function (s) { return s.events >= 5; }],
+    ['collab', 'First collab', function (s) { return s.collabs >= 1; }],
+    ['circle', 'First Circle', function (s) { return s.inperson >= 1; }],
+    ['reach', '100 reached', function (s) { return s.reached >= 100; }],
+    ['top', 'Top of the month', function (s, rank) { return rank === 1 && s.points > 0; }]
+  ];
+  function badgeIcon(k) {
+    var paths = {
+      first: '<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.3 6L12 16.4 6.6 19.4l1.3-6L3.4 9.3l6-.7z"/>',
+      five: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/>',
+      collab: '<circle cx="9" cy="8" r="3.5"/><circle cx="16" cy="9" r="2.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14.5c3 0 6 2 6 5.5"/>',
+      circle: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+      reach: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+      top: '<path d="M3 18l2-11 5 5 2-7 2 7 5-5 2 11z"/><path d="M3 21h18"/>'
+    };
+    return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths[k] + '</svg>';
+  }
+  function leadBlock(p, self, myEvents, monthEvents) {
+    var all = tally(myEvents)[p.id] || { points: 0, events: 0, reached: 0, collabs: 0, inperson: 0 };
+    var ranked = leadsRanked(monthEvents);
+    var rank = 0;
+    ranked.forEach(function (r, i) { if (r.p.id === p.id) rank = i + 1; });
+    var monthPts = (ranked[rank - 1] || { s: { points: 0 } }).s.points;
+    var h = '<div class="grid2" style="grid-template-columns:repeat(4,minmax(0,1fr))">' +
+      '<div class="stat" style="background:var(--lime)"><b>' + all.points + '</b><span style="color:var(--ink)">Points</span></div>' +
+      '<div class="stat"><b>' + all.events + '</b><span>Events</span></div>' +
+      '<div class="stat"><b>' + all.reached + '</b><span>Students reached</span></div>' +
+      '<div class="stat" style="background:var(--pink)"><b>' + (monthPts > 0 ? '#' + rank : '-') + '</b><span style="color:var(--ink)">Rank this month</span></div></div>';
+    if (self) h += '<button class="btn sky big block" data-action="log-event">' + ICON.plus + 'Log an event</button>';
+    var earned = BADGES.filter(function (b) { return b[2](all, rank); }).length;
+    h += '<div class="sec-h"><h2>Badges</h2><span class="muted small" style="font-weight:600">' + earned + ' of ' + BADGES.length + '</span></div>' +
+      '<div class="badges">' + BADGES.map(function (b) {
+        var on = b[2](all, rank);
+        return '<div class="badge-card' + (on ? ' on' : '') + '"><div class="bi">' + badgeIcon(b[0]) + '</div><span>' + esc(b[1]) + '</span>' +
+          (on ? '' : '<span class="tiny muted">Locked</span>') + '</div>';
+      }).join('') + '</div>';
+    var recent = myEvents.slice(0, 5);
+    h += '<div class="sec-h"><h2>' + (self ? 'My events' : 'Events') + '</h2><a class="linkbtn" href="#/events">See all</a></div>' +
+      '<div class="card flush list">' + (recent.length ? recent.map(eventRow).join('') : '<div class="empty">No events logged yet.' + (self ? ' Hosted one? Log it to earn points.' : '') + '</div>') + '</div>';
+    return h;
+  }
+
+  // ---------- events ----------
+  function eventRow(e) {
+    var p = S.byId[e.person] || { name: 'Someone' };
+    var me = S.me;
+    var partners = (e.collab_with || []).map(function (id) { return first(nameOf(id)); });
+    var meta = [ruleLabel(e.type)];
+    if (e.club) meta.push(e.club);
+    meta.push(fmtDay(e.day));
+    if (e.attendees != null) meta.push(e.attendees + ' joined');
+    var chips = (e.status === 'approved' ? '<span class="chip ok">+' + evPoints(e) + ' points' + (e.verified_by ? ' · Verified by ' + esc(firstOf(e.verified_by)) : '') + '</span>' :
+      EV_STATUS[e.status] + '<span class="chip">+' + evPoints(e) + ' points</span>');
+    if (partners.length) chips += '<span class="chip sky">Collab with ' + esc(partners.join(', ')) + '</span>';
+    var h = '<div class="task" data-ev="' + e.id + '">' +
+      '<div class="row" style="align-items:flex-start;gap:12px"><div class="av">' + esc(initials(p.name)) + '</div><div style="min-width:0;flex:1">' +
+      '<div class="t-title">' + esc(e.title) + '</div>' +
+      '<div class="t-meta">' + esc(first(p.name)) + ' · ' + esc(meta.join(' · ')) + '</div></div></div>' +
+      '<div class="row wrap" style="gap:6px">' + chips + '</div>';
+    if (e.link) h += '<a class="linkbtn" style="align-self:flex-start" href="' + esc(/^https?:\/\//i.test(e.link) ? e.link : 'https://' + e.link) + '" target="_blank" rel="noopener">Open link</a>';
+    if (e.note) h += '<div class="t-details">' + esc(e.note) + '</div>';
+    if (e.status === 'sent_back' && e.feedback) h += '<div class="t-meta" style="color:var(--bad)">Feedback: ' + esc(e.feedback) + '</div>';
+    var acts = '';
+    if (e.status === 'pending' && canVerifyEvent(p)) {
+      acts += '<button class="btn sm primary" data-action="ev-approve" data-id="' + e.id + '">Approve</button>' +
+        '<button class="btn sm danger" data-action="ev-back" data-id="' + e.id + '">Send back</button>';
+    }
+    if ((e.person === me.id && e.status !== 'approved') || me.is_admin) {
+      acts += '<button class="linkbtn" data-action="ev-edit" data-id="' + e.id + '">Edit</button>' +
+        '<button class="linkbtn" style="color:var(--bad)" data-action="ev-delete" data-id="' + e.id + '">Delete</button>';
+    }
+    if (acts) h += '<div class="acts">' + acts + '</div>';
+    h += '<div class="inline-box" data-box="ev-back-' + e.id + '" hidden><label class="lbl" for="eb-' + e.id + '">What should they fix?</label>' +
+      '<input class="input" id="eb-' + e.id + '" maxlength="500"><button class="btn sm danger" data-action="ev-back-confirm" data-id="' + e.id + '">Send back</button></div>';
+    return h + '</div>';
+  }
+
+  async function viewEvents(my) {
+    var rows = await q(sb.from('events').select('*').order('day', { ascending: false }).order('created_at', { ascending: false }).limit(200));
+    if (my !== seq) return;
+    S.evCache = {}; rows.forEach(function (e) { S.evCache[e.id] = e; });
+    var f = S.evFilter;
+    var list = rows.filter(function (e) {
+      if (f === 'mine') return creditedIds(e).indexOf(S.me.id) >= 0;
+      if (f === 'waiting') return e.status === 'pending';
+      return e.status !== 'sent_back' || e.person === S.me.id || S.me.is_admin;
+    });
+    var canLog = S.me.is_student_lead || S.me.is_admin;
+    var h = '<div class="stack"><div class="row between"><h1 style="font-size:28px;font-weight:700">Events</h1>' +
+      (canLog ? '<button class="btn sm sky" data-action="log-event">' + ICON.plus + 'Log an event</button>' : '') + '</div>' +
+      '<p class="muted" style="margin:0">Every event a Student Lead hosts, across all colleges. Points count once Vikas or Aparna approve.</p>' +
+      '<div class="seg" role="group" aria-label="Filter">' +
+      [['all', 'All'], ['mine', 'Mine'], ['waiting', 'Waiting approval']].map(function (x) {
+        return '<button class="' + (f === x[0] ? 'on' : '') + '" data-action="ev-filter" data-f="' + x[0] + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + '</button>';
+      }).join('') + '</div>' +
+      '<div class="card flush list">' + (list.length ? list.map(eventRow).join('') : '<div class="empty">No events here yet.</div>') + '</div>' +
+      pointsGuide() + '</div>';
+    $view.innerHTML = h;
+  }
+
+  function pointsGuide() {
+    if (!S.ruleList.length) return '';
+    return '<div class="sec-h"><h2>How to earn points</h2></div><div class="pts">' + S.ruleList.map(function (r) {
+      return '<div class="stat"><b>' + r.points + '</b><span>' + esc(r.label) + '</span></div>';
+    }).join('') + '</div><p class="muted small" style="margin:4px 2px 0">Collab events give full points to every Student Lead in the collab.</p>';
+  }
+
+  async function openEventForm(id) {
+    var e = id ? (S.evCache && S.evCache[id]) : null;
+    if (id && !e) e = await q(sb.from('events').select('*').eq('id', id).maybeSingle());
+    e = e || { type: 'virtual', day: today(), collab_with: [], person: S.me.id };
+    var leads = S.people.filter(function (p) { return p.active && p.is_student_lead; });
+    var forSel = '';
+    if (S.me.is_admin && !id) {
+      forSel = '<div class="field"><label class="lbl" for="ef-for">Student Lead</label><select class="input" id="ef-for">' +
+        leads.map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</select></div>';
+    }
+    $modal.innerHTML = '<div class="modal-bg" data-action="modal-close-bg"><form class="modal stack" id="ev-form" novalidate role="dialog" aria-modal="true" aria-labelledby="ef-h">' +
+      '<div class="row between"><h2 id="ef-h" style="font-size:20px">' + (id ? 'Edit event' : 'Log an event') + '</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
+      forSel +
+      '<div class="field"><label class="lbl" for="ef-type">What kind?</label><select class="input" id="ef-type">' +
+      S.ruleList.map(function (r) { return '<option value="' + r.type + '"' + (r.type === e.type ? ' selected' : '') + '>' + esc(r.label) + ' (' + r.points + ' points)</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label class="lbl" for="ef-title">Event name</label><input class="input" id="ef-title" maxlength="200" placeholder="e.g. Game Zone quiz night" value="' + esc(e.title) + '"></div>' +
+      '<div class="grid2"><div class="field"><label class="lbl" for="ef-day">Date</label><input class="input" id="ef-day" type="date" max="' + today() + '" min="' + addDays(today(), -30) + '" value="' + esc(e.day) + '"></div>' +
+      '<div class="field"><label class="lbl" for="ef-att">How many joined</label><input class="input" id="ef-att" type="number" min="0" inputmode="numeric" placeholder="About" value="' + esc(e.attendees == null ? '' : e.attendees) + '"></div></div>' +
+      '<div class="field"><label class="lbl" for="ef-club">Club (optional)</label><select class="input" id="ef-club"><option value="">None</option>' +
+      CLUBS.map(function (c) { return '<option' + (c === e.club ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div>' +
+      '<div><div class="lbl">Collab with (optional)</div><p class="muted tiny" style="margin:0 0 8px">Every Student Lead you tick gets the full points too.</p><div class="checks" id="ef-collab">' +
+      leads.filter(function (p) { return p.id !== e.person; }).map(function (p) {
+        return '<label><input type="checkbox" value="' + p.id + '"' + ((e.collab_with || []).indexOf(p.id) >= 0 ? ' checked' : '') + '>' + esc(first(p.name)) + '</label>';
+      }).join('') + '</div></div>' +
+      '<div class="field"><label class="lbl" for="ef-link">Link (optional)</label><input class="input" id="ef-link" maxlength="500" placeholder="Instagram post, recording or photos" value="' + esc(e.link) + '"></div>' +
+      '<div class="field"><label class="lbl" for="ef-note">Note (optional)</label><textarea class="input" id="ef-note" maxlength="1000">' + esc(e.note) + '</textarea></div>' +
+      '<div class="err" id="ef-err" role="alert"></div><button class="btn primary big" type="submit">' + (id ? 'Save changes' : 'Submit for approval') + '</button></form></div>';
+    document.getElementById('ef-title').focus();
+    document.getElementById('ev-form').addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var $e = document.getElementById('ef-err'); $e.textContent = '';
+      var title = document.getElementById('ef-title').value.trim();
+      var day = document.getElementById('ef-day').value;
+      var att = document.getElementById('ef-att').value;
+      if (!title) { $e.textContent = 'Write the event name.'; return; }
+      if (!day) { $e.textContent = 'Pick the date.'; return; }
+      if (day > today()) { $e.textContent = 'The date cannot be in the future.'; return; }
+      if (att !== '' && (isNaN(+att) || +att < 0)) { $e.textContent = 'How many joined should be a number.'; return; }
+      var row = {
+        type: document.getElementById('ef-type').value, title: title, day: day,
+        attendees: att === '' ? null : Math.round(+att),
+        club: document.getElementById('ef-club').value || null,
+        link: document.getElementById('ef-link').value.trim() || null,
+        note: document.getElementById('ef-note').value.trim() || null,
+        collab_with: [].map.call(document.querySelectorAll('#ef-collab input:checked'), function (x) { return x.value; })
+      };
+      try {
+        if (id) await q(sb.from('events').update(row).eq('id', id));
+        else {
+          var forEl = document.getElementById('ef-for');
+          row.person = forEl ? forEl.value : S.me.id;
+          if (row.collab_with.indexOf(row.person) >= 0) row.collab_with = row.collab_with.filter(function (x) { return x !== row.person; });
+          await q(sb.from('events').insert(row));
+        }
+      } catch (er) { $e.textContent = errMsg(er); return; }
+      closeModal(); toast(id ? 'Saved' : 'Sent for approval'); rerender();
+    });
+  }
+
+  // ---------- leaderboard ----------
+  async function viewLeaderboard(my) {
+    var rows = await q(sb.from('events').select('person,collab_with,status,type,points,attendees,day').eq('status', 'approved').limit(5000));
+    if (my !== seq) return;
+    var m = today().slice(0, 7), prev = shiftMonth(m, -1);
+    var monthRows = rows.filter(function (e) { return e.day.slice(0, 7) === m; });
+    var prevRanked = leadsRanked(rows.filter(function (e) { return e.day.slice(0, 7) === prev; }));
+    var ranked = leadsRanked(S.lbPeriod === 'all' ? rows : monthRows);
+    var top = ranked.slice(0, 3), restList = ranked.slice(3);
+    function pod(r, place) {
+      if (!r) return '<div></div>';
+      var hgt = place === 1 ? 128 : place === 2 ? 96 : 76;
+      return '<div class="pod"><div class="av ' + (place === 1 ? 'gold' : '') + '">' + esc(initials(r.p.name)) + '</div>' +
+        '<b>' + esc(first(r.p.name)) + '</b><span class="tiny">' + esc((r.p.chapter || '').split(',')[0]) + '</span>' +
+        '<div class="pod-bar p' + place + '" style="height:' + hgt + 'px"><b>' + place + '</b><span>' + r.s.points + ' pts</span></div></div>';
+    }
+    var h = '<div class="stack"><div><h1 style="font-size:28px;font-weight:700">Leaderboard</h1>' +
+      '<div class="muted">Student Leads · ' + (S.lbPeriod === 'all' ? 'All time' : esc(monthLabel(m))) + '</div></div>' +
+      '<div class="seg" role="group" aria-label="Period">' +
+      '<button class="' + (S.lbPeriod === 'month' ? 'on' : '') + '" data-action="lb-period" data-p="month" aria-pressed="' + (S.lbPeriod === 'month') + '">This month</button>' +
+      '<button class="' + (S.lbPeriod === 'all' ? 'on' : '') + '" data-action="lb-period" data-p="all" aria-pressed="' + (S.lbPeriod === 'all') + '">All time</button></div>';
+    if (!ranked.length || ranked[0].s.points === 0) {
+      h += '<div class="card empty">No approved events yet' + (S.lbPeriod === 'month' ? ' this month' : '') + '. The first event takes the top spot.</div>';
+    } else {
+      h += '<section class="podium">' + pod(top[1], 2) + pod(top[0], 1) + pod(top[2], 3) + '</section>';
+    }
+    if (prevRanked.length && prevRanked[0].s.points > 0) {
+      h += '<div class="card row" style="background:var(--warnbg)"><div class="av gold">' + badgeIcon('top') + '</div><div><div style="font-weight:700">Top Student Lead of ' + esc(monthLabel(prev).split(' ')[0]) + '</div>' +
+        '<div class="small">' + esc(prevRanked[0].p.name) + ' · ' + prevRanked[0].s.points + ' points</div></div></div>';
+    }
+    h += '<div class="sec-h"><h2>Rankings</h2></div><div class="card flush list">' + ranked.map(function (r, i) {
+      var meRow = r.p.id === S.me.id;
+      var tag = canSee(r.p) ? 'a' : 'div';
+      return '<' + tag + ' class="person"' + (tag === 'a' ? ' href="#/person/' + r.p.id + '"' : '') + ' style="' + (meRow ? 'background:var(--lav)' : '') + '">' +
+        '<b style="width:26px;font-size:16px">' + (i + 1) + '</b><div class="av">' + esc(initials(r.p.name)) + '</div><div style="min-width:0;flex:1">' +
+        '<div class="nm">' + esc(r.p.name) + (meRow ? ' <span class="chip navy">You</span>' : '') + '</div>' +
+        '<div class="muted small">' + esc((r.p.chapter || 'Student Lead').split(',')[0]) + ' · ' + r.s.events + (r.s.events === 1 ? ' event' : ' events') + ' · ' + r.s.reached + ' reached</div></div>' +
+        '<b style="font-size:18px">' + r.s.points + '</b></' + tag + '>';
+    }).join('') + '</div>' + pointsGuide() + '</div>';
+    void restList;
+    $view.innerHTML = h;
+  }
+
+  // ---------- home ----------
+  async function viewHome(my) {
+    var m = today().slice(0, 7);
+    var res = await Promise.all([
+      q(sb.from('plans').select('*').order('day', { ascending: true, nullsFirst: false }).limit(50)),
+      q(sb.from('events').select('*').eq('status', 'approved').order('verified_at', { ascending: false }).limit(6)),
+      q(sb.from('events').select('person,collab_with,status,type,points,attendees,day').eq('status', 'approved').gte('day', m + '-01')),
+      q(sb.from('ideas').select('*').order('created_at', { ascending: false }).limit(60)),
+      q(sb.from('idea_votes').select('*').limit(5000)),
+      q(sb.from('idea_replies').select('idea_id').limit(5000)),
+      canApprove() ? loadPending() : Promise.resolve([])
+    ]);
+    if (my !== seq) return;
+    var plans = res[0], wins = res[1], ranked = leadsRanked(res[2]).filter(function (r) { return r.s.points > 0; }).slice(0, 3);
+    var votes = {}, mine = {}, replies = {};
+    res[4].forEach(function (v) { votes[v.idea_id] = (votes[v.idea_id] || 0) + 1; if (v.person === S.me.id) mine[v.idea_id] = true; });
+    res[5].forEach(function (r) { replies[r.idea_id] = (replies[r.idea_id] || 0) + 1; });
+    var ideas = res[3].slice().sort(function (a, b) {
+      var ad = a.status === 'done' ? 1 : 0, bd = b.status === 'done' ? 1 : 0;
+      return ad - bd || (votes[b.id] || 0) - (votes[a.id] || 0) || (a.created_at < b.created_at ? 1 : -1);
+    });
+    var pending = res[6].length;
+    var hr = new Date().getHours();
+    var greet = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+    var pinned = plans.filter(function (x) { return x.pinned; });
+    var upcoming = plans.filter(function (x) { return !x.pinned && (!x.day || x.day >= today()); });
+
+    var h = '<div class="stack"><section class="hero"><span class="hi">' + greet + '</span>' +
+      '<div><h1>Hey ' + esc(first(S.me.name)) + '</h1><div class="lead" style="margin-top:6px">Welcome to the EduMoon team. Here is what is happening.</div></div>' +
+      '<div class="row wrap" style="gap:8px"><a class="btn" href="#/checkin">Check in</a>' +
+      (S.me.is_student_lead ? '<button class="btn" data-action="log-event">Log an event</button>' : '') +
+      '<a class="btn" href="#/me">My tasks</a></div></section>';
+    if (pending) h += '<a class="card row between" href="#/approvals" style="text-decoration:none;color:inherit;background:var(--lime)"><div><b style="font-size:17px">' + pending + (pending === 1 ? ' thing is' : ' things are') + ' waiting for your approval</b><div class="small">Tap to review</div></div>' + ICON.chev + '</a>';
+    pinned.forEach(function (x) {
+      h += '<div class="card" style="background:var(--peach)"><div class="row between" style="align-items:flex-start"><div><span class="chip" style="background:#fff">Announcement</span>' +
+        '<div style="font-weight:700;font-size:17px;margin-top:6px">' + esc(x.title) + '</div>' +
+        (x.note ? '<div class="small" style="margin-top:2px">' + esc(x.note) + '</div>' : '') +
+        (x.day ? '<div class="small" style="margin-top:2px;font-weight:600">' + esc(fmtLongDay(x.day)) + '</div>' : '') + '</div>' +
+        (S.me.is_admin ? '<button class="linkbtn" data-action="plan-edit" data-id="' + x.id + '">Edit</button>' : '') + '</div></div>';
+    });
+
+    h += '<div class="sec-h"><h2>Coming up at EduMoon</h2>' + (S.me.is_admin ? '<button class="btn sm sky" data-action="plan-edit" data-id="">' + ICON.plus + 'Add</button>' : '') + '</div>' +
+      '<div class="card flush list">' + (upcoming.length ? upcoming.map(function (x) {
+        var dt = x.day ? new Date(x.day + 'T00:00:00') : null;
+        return '<div class="person"><div class="datebox">' + (dt ? '<small>' + dt.toLocaleDateString('en-IN', { month: 'short' }) + '</small><b>' + dt.getDate() + '</b>' : '<small>Date</small><b>TBA</b>') + '</div>' +
+          '<div style="min-width:0;flex:1"><div class="nm">' + esc(x.title) + '</div><div class="muted small">' + esc([x.note, x.owner ? 'Lead: ' + x.owner : ''].filter(Boolean).join(' · ')) + '</div></div>' +
+          (S.me.is_admin ? '<button class="linkbtn" data-action="plan-edit" data-id="' + x.id + '">Edit</button>' : '') + '</div>';
+      }).join('') : '<div class="empty">Nothing planned yet.' + (S.me.is_admin ? ' Add the hackathon, cohort or next team meetup.' : '') + '</div>') + '</div>';
+
+    h += '<div class="sec-h"><h2>Top Student Leads this month</h2><a class="linkbtn" href="#/leaderboard">Leaderboard</a></div>' +
+      '<div class="card flush list">' + (ranked.length ? ranked.map(function (r, i) {
+        return '<div class="person"><b style="width:22px;font-size:17px">' + (i + 1) + '</b><div class="av' + (i === 0 ? ' gold' : '') + '">' + esc(initials(r.p.name)) + '</div><div style="flex:1;min-width:0"><div class="nm">' + esc(r.p.name) + '</div>' +
+          '<div class="muted small">' + esc((r.p.chapter || '').split(',')[0]) + '</div></div><b>' + r.s.points + ' pts</b></div>';
+      }).join('') : '<div class="empty">No approved events this month yet.</div>') + '</div>';
+
+    if (wins.length) {
+      h += '<div class="sec-h"><h2>Recent wins</h2><a class="linkbtn" href="#/events">All events</a></div><div class="card flush list">' + wins.map(function (e) {
+        var partners = (e.collab_with || []).map(function (id) { return first(nameOf(id)); });
+        return '<div class="person"><div class="av">' + esc(initials(nameOf(e.person))) + '</div><div style="min-width:0;flex:1"><div class="nm" style="font-size:14.5px">' +
+          esc(first(nameOf(e.person)) + (partners.length ? ' and ' + partners.join(', ') : '') + ' hosted ' + e.title) + '</div>' +
+          '<div class="muted small">' + esc(ruleLabel(e.type) + (e.attendees != null ? ' · ' + e.attendees + ' joined' : '') + ' · ' + fmtDay(e.day)) + '</div></div><span class="chip ok">+' + evPoints(e) + '</span></div>';
+      }).join('') + '</div>';
+    }
+
+    h += '<div class="sec-h"><h2>What\'s on your mind?</h2></div>' +
+      '<form class="card stack" id="idea-form" style="gap:10px" novalidate><label class="lbl" for="idea-body" style="margin:0">Share an idea, or what your college needs from EduMoon</label>' +
+      '<textarea class="input" id="idea-body" maxlength="1000" placeholder="e.g. ABC College wants a resume workshop"></textarea>' +
+      '<div class="row wrap"><label class="sr" for="idea-college">College (optional)</label><input class="input" id="idea-college" maxlength="160" placeholder="College (optional)" style="flex:1;min-width:160px" value="' + esc(S.me.chapter || '') + '">' +
+      '<button class="btn primary" type="submit">Post</button></div><div class="err" id="idea-err" role="alert"></div></form>' +
+      '<div class="stack" style="gap:12px">' + (ideas.length ? ideas.map(function (x) {
+        var st = x.status === 'planned' ? '<span class="chip warn">Planned</span>' : x.status === 'done' ? '<span class="chip ok">Done</span>' : '';
+        var canDel = x.author === S.me.id || S.me.is_admin;
+        return '<div class="card idea" data-idea="' + x.id + '"><div class="row" style="align-items:flex-start;gap:12px">' +
+          '<button class="vote' + (mine[x.id] ? ' on' : '') + '" data-action="idea-vote" data-id="' + x.id + '" aria-pressed="' + !!mine[x.id] + '" aria-label="Upvote">' + ICON.up + '<b>' + (votes[x.id] || 0) + '</b></button>' +
+          '<div style="flex:1;min-width:0"><div style="font-size:15.5px;font-weight:600;white-space:pre-wrap">' + esc(x.body) + '</div>' +
+          '<div class="muted small" style="margin-top:4px">' + esc(first(nameOf(x.author)) + (x.college ? ' · ' + x.college : '') + ' · ' + fmtWhen(x.created_at)) + '</div>' +
+          '<div class="acts" style="margin-top:6px">' + st +
+          '<button class="linkbtn" data-action="idea-replies" data-id="' + x.id + '">Replies (' + (replies[x.id] || 0) + ')</button>' +
+          (S.me.is_admin ? '<label class="sr" for="is-' + x.id + '">Status</label><select class="input" style="height:34px;width:auto;font-size:13px;border-radius:10px;padding:0 6px" id="is-' + x.id + '" data-action="idea-status" data-id="' + x.id + '">' +
+            [['new', 'New'], ['planned', 'Planned'], ['done', 'Done']].map(function (o) { return '<option value="' + o[0] + '"' + (x.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' : '') +
+          (canDel ? '<button class="linkbtn" style="color:var(--bad)" data-action="idea-del" data-id="' + x.id + '">Delete</button>' : '') +
+          '</div><div class="comments" data-box="idea-' + x.id + '" hidden style="margin-top:8px"></div></div></div></div>';
+      }).join('') : '<div class="card empty">No ideas yet. Be the first.</div>') + '</div></div>';
+    $view.innerHTML = h;
+
+    document.getElementById('idea-form').addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var body = document.getElementById('idea-body').value.trim(), $e = document.getElementById('idea-err');
+      $e.textContent = '';
+      if (!body) { $e.textContent = 'Write your idea first.'; document.getElementById('idea-body').focus(); return; }
+      try { await q(sb.from('ideas').insert({ body: body, college: document.getElementById('idea-college').value.trim() || null })); }
+      catch (er) { $e.textContent = errMsg(er); return; }
+      toast('Posted'); rerender();
+    });
+  }
+
+  async function loadIdeaReplies(id) {
+    var b = box('idea-' + id); if (!b) return;
+    b.innerHTML = '<div class="muted small">Loading...</div>';
+    var rows = await q(sb.from('idea_replies').select('*').eq('idea_id', id).order('created_at'));
+    b.innerHTML = (rows.length ? rows.map(function (c) {
+      return '<div class="cm"><b>' + esc(nameOf(c.author)) + '</b><span class="tiny">' + esc(fmtWhen(c.created_at)) + '</span><p>' + esc(c.body) + '</p></div>';
+    }).join('') : '<div class="muted small">No replies yet.</div>') +
+      '<div class="row"><label class="sr" for="ir-' + id + '">Write a reply</label><input class="input" id="ir-' + id + '" maxlength="1000" placeholder="Write a reply">' +
+      '<button class="btn sm primary" data-action="idea-reply-post" data-id="' + id + '">Post</button></div>';
+  }
+
+  async function openPlanForm(id) {
+    var x = id ? await q(sb.from('plans').select('*').eq('id', id).maybeSingle()) : { title: '', day: '', owner: '', note: '', pinned: false };
+    $modal.innerHTML = '<div class="modal-bg" data-action="modal-close-bg"><form class="modal stack" id="plan-form" novalidate role="dialog" aria-modal="true" aria-labelledby="pl-h">' +
+      '<div class="row between"><h2 id="pl-h" style="font-size:20px">' + (id ? 'Edit' : 'Add to Coming up') + '</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
+      '<div class="field"><label class="lbl" for="pl-title">What is coming up?</label><input class="input" id="pl-title" maxlength="160" placeholder="e.g. EduMoon Hackathon" value="' + esc(x.title) + '"></div>' +
+      '<div class="grid2"><div class="field"><label class="lbl" for="pl-day">Date (leave empty for TBA)</label><input class="input" id="pl-day" type="date" value="' + esc(x.day || '') + '"></div>' +
+      '<div class="field"><label class="lbl" for="pl-owner">Lead (optional)</label><input class="input" id="pl-owner" maxlength="120" value="' + esc(x.owner) + '"></div></div>' +
+      '<div class="field"><label class="lbl" for="pl-note">Details (optional)</label><input class="input" id="pl-note" maxlength="500" value="' + esc(x.note) + '"></div>' +
+      '<div class="checks" style="grid-template-columns:1fr"><label><input type="checkbox" id="pl-pin"' + (x.pinned ? ' checked' : '') + '>Show as an announcement at the top of Home</label></div>' +
+      '<div class="err" id="pl-err" role="alert"></div><button class="btn primary big" type="submit">Save</button>' +
+      (id ? '<button type="button" class="btn danger" data-action="plan-del" data-id="' + id + '">Delete</button>' : '') + '</form></div>';
+    document.getElementById('pl-title').focus();
+    document.getElementById('plan-form').addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var $e = document.getElementById('pl-err'); $e.textContent = '';
+      var row = {
+        title: document.getElementById('pl-title').value.trim(), day: document.getElementById('pl-day').value || null,
+        owner: document.getElementById('pl-owner').value.trim() || null, note: document.getElementById('pl-note').value.trim() || null,
+        pinned: document.getElementById('pl-pin').checked
+      };
+      if (!row.title) { $e.textContent = 'Write what is coming up.'; return; }
+      try {
+        if (id) await q(sb.from('plans').update(row).eq('id', id));
+        else await q(sb.from('plans').insert(row));
+      } catch (er) { $e.textContent = errMsg(er); return; }
+      closeModal(); toast('Saved'); rerender();
+    });
+  }
+
+  // ---------- recruitment ----------
+  async function viewRecruit(my) {
+    var rows = await q(sb.from('recruits').select('*').order('updated_at', { ascending: false }).limit(500));
+    if (my !== seq) return;
+    S.recCache = {}; rows.forEach(function (r) { S.recCache[r.id] = r; });
+    var m = today().slice(0, 7);
+    var onMonth = rows.filter(function (r) { return r.status === 'onboarded' && r.onboarded_at && tsDay(r.onboarded_at).slice(0, 7) === m; }).length;
+    var count = function (st) { return rows.filter(function (r) { return r.status === st; }).length; };
+    var h = '<div class="stack"><div class="row between"><div><h1 style="font-size:28px;font-weight:700">Recruitment</h1><div class="muted">New Student Leads in the pipeline</div></div>' +
+      '<button class="btn sm sky" data-action="recruit-edit" data-id="">' + ICON.plus + 'Add person</button></div>' +
+      '<div class="grid3"><div class="stat" style="background:var(--lime)"><b>' + onMonth + '</b><span style="color:var(--ink)">Onboarded this month</span></div>' +
+      '<div class="stat"><b>' + count('interested') + '</b><span>Interested</span></div><div class="stat"><b>' + count('contacted') + '</b><span>Contacted</span></div></div>';
+    ['interested', 'contacted', 'onboarded', 'not_interested'].forEach(function (st) {
+      var list = rows.filter(function (r) { return r.status === st; });
+      if (!list.length) return;
+      h += '<div class="sec-h"><h2>' + RECRUIT[st].label + ' (' + list.length + ')</h2></div><div class="card flush list">' + list.map(function (r) {
+        return '<div class="task"><div class="row between" style="align-items:flex-start"><div style="min-width:0"><div class="t-title">' + esc(r.name) + '</div>' +
+          '<div class="t-meta">' + esc([r.college, r.contact].filter(Boolean).join(' · ')) + '</div>' +
+          (r.note ? '<div class="t-details">' + esc(r.note) + '</div>' : '') +
+          '<div class="tiny muted" style="margin-top:4px">Added by ' + esc(first(nameOf(r.added_by))) + ' · updated ' + esc(fmtWhen(r.updated_at)) + '</div></div>' +
+          '<span class="chip ' + RECRUIT[r.status].cls + '">' + RECRUIT[r.status].label + '</span></div>' +
+          '<div class="acts"><label class="sr" for="rs-' + r.id + '">Status</label><select class="input" id="rs-' + r.id + '" data-action="recruit-status" data-id="' + r.id + '">' +
+          Object.keys(RECRUIT).map(function (k) { return '<option value="' + k + '"' + (k === r.status ? ' selected' : '') + '>' + RECRUIT[k].label + '</option>'; }).join('') + '</select>' +
+          '<button class="linkbtn" data-action="recruit-edit" data-id="' + r.id + '">Edit</button>' +
+          '<button class="linkbtn" style="color:var(--bad)" data-action="recruit-del" data-id="' + r.id + '">Delete</button></div></div>';
+      }).join('') + '</div>';
+    });
+    if (!rows.length) h += '<div class="card empty">Nobody added yet. Add everyone you approach, and move them along as they reply.</div>';
+    if (count('onboarded')) h += '<p class="muted small" style="margin:0 2px">When someone is onboarded, Vikas or Aparna adds them in Admin and creates their login.</p>';
+    $view.innerHTML = h + '</div>';
+  }
+
+  function openRecruitForm(id) {
+    var r = id ? S.recCache[id] : { name: '', college: '', contact: '', note: '', status: 'contacted' };
+    $modal.innerHTML = '<div class="modal-bg" data-action="modal-close-bg"><form class="modal stack" id="rec-form" novalidate role="dialog" aria-modal="true" aria-labelledby="rc-h">' +
+      '<div class="row between"><h2 id="rc-h" style="font-size:20px">' + (id ? 'Edit' : 'Add a person') + '</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
+      '<div class="field"><label class="lbl" for="rc-name">Name</label><input class="input" id="rc-name" maxlength="120" value="' + esc(r.name) + '"></div>' +
+      '<div class="field"><label class="lbl" for="rc-college">College</label><input class="input" id="rc-college" maxlength="160" value="' + esc(r.college) + '"></div>' +
+      '<div class="field"><label class="lbl" for="rc-contact">Phone or Instagram (optional)</label><input class="input" id="rc-contact" maxlength="160" value="' + esc(r.contact) + '"></div>' +
+      '<div class="field"><label class="lbl" for="rc-status">Status</label><select class="input" id="rc-status">' +
+      Object.keys(RECRUIT).map(function (k) { return '<option value="' + k + '"' + (k === r.status ? ' selected' : '') + '>' + RECRUIT[k].label + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label class="lbl" for="rc-note">Note (optional)</label><textarea class="input" id="rc-note" maxlength="1000">' + esc(r.note) + '</textarea></div>' +
+      '<div class="err" id="rc-err" role="alert"></div><button class="btn primary big" type="submit">Save</button></form></div>';
+    document.getElementById('rc-name').focus();
+    document.getElementById('rec-form').addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var $e = document.getElementById('rc-err'); $e.textContent = '';
+      var row = {
+        name: document.getElementById('rc-name').value.trim(), college: document.getElementById('rc-college').value.trim() || null,
+        contact: document.getElementById('rc-contact').value.trim() || null, status: document.getElementById('rc-status').value,
+        note: document.getElementById('rc-note').value.trim() || null
+      };
+      if (!row.name) { $e.textContent = 'Enter a name.'; return; }
+      try {
+        if (id) await q(sb.from('recruits').update(row).eq('id', id));
+        else await q(sb.from('recruits').insert(row));
+      } catch (er) { $e.textContent = errMsg(er); return; }
+      closeModal(); toast('Saved'); rerender();
+    });
+  }
+
+  // ---------- export for the Chapters site ----------
+  async function openExport() {
+    var rows = await q(sb.from('events').select('*').eq('status', 'approved').order('day').limit(5000));
+    var lines = [];
+    rows.forEach(function (e) {
+      creditedIds(e).forEach(function (pid) {
+        var p = S.byId[pid];
+        if (!p || !p.em_id) return;
+        var o = '  { lead: ' + JSON.stringify(p.em_id) + ', date: ' + JSON.stringify(e.day) + ', type: ' + JSON.stringify(e.type);
+        if (e.club) o += ', club: ' + JSON.stringify(e.club);
+        o += ', title: ' + JSON.stringify(e.title) + ' },';
+        lines.push(o);
+      });
+    });
+    var pts = S.ruleList.map(function (r) { return r.type + ': ' + r.points; }).join(', ');
+    var text = '// Exported from the EduMoon Team Portal on ' + fmtLongDay(today()) + '\n' +
+      'window.POINTS = { ' + pts + ' };\n' +
+      'window.LEADERBOARD = { month: "' + today().slice(0, 7) + '", updated: "' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + '" };\n' +
+      'window.ACTIVITY = [\n' + lines.join('\n') + '\n];\n';
+    $modal.innerHTML = '<div class="modal-bg" data-action="modal-close-bg"><div class="modal stack" role="dialog" aria-modal="true" aria-labelledby="ex-h">' +
+      '<div class="row between"><h2 id="ex-h" style="font-size:20px">Export for Chapters</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
+      '<ol class="small" style="margin:0;padding-left:20px;line-height:1.7"><li>Copy the text below.</li><li>In the chapters repo, open <b>assets/data.js</b> and click the pencil to edit.</li>' +
+      '<li>Replace the three blocks that start with <b>window.POINTS</b>, <b>window.LEADERBOARD</b> and <b>window.ACTIVITY</b> with this text.</li><li>Commit. The Chapters leaderboard updates in a minute.</li></ol>' +
+      '<p class="muted tiny" style="margin:0">' + rows.length + ' approved events, ' + lines.length + ' lines. Only Student Leads with an EduMoon ID are included.</p>' +
+      '<label class="sr" for="ex-text">Export text</label><textarea class="input" id="ex-text" readonly style="min-height:220px;font-family:ui-monospace,Menlo,monospace;font-size:12px">' + esc(text) + '</textarea>' +
+      '<div class="grid2"><button class="btn primary" data-action="export-copy">Copy</button><button class="btn" data-action="export-download">Download</button></div></div></div>';
+    S.exportText = text;
   }
 
   // ---------- one click handler for everything ----------
@@ -943,6 +1520,65 @@
     ev.preventDefault();
 
     if (a === 'signout') { await sb.auth.signOut(); return; }
+    if (a === 'more') { openMore(); return; }
+    if (a === 'log-event') { openEventForm(null); return; }
+    if (a === 'ev-edit') { openEventForm(id); return; }
+    if (a === 'ev-filter') { S.evFilter = el.getAttribute('data-f'); route(); return; }
+    if (a === 'lb-period') { S.lbPeriod = el.getAttribute('data-p'); route(); return; }
+    if (a === 'plan-edit') { openPlanForm(id || null); return; }
+    if (a === 'recruit-edit') { openRecruitForm(id || null); return; }
+    if (a === 'export') { await act(openExport, el); el.disabled = false; return; }
+    if (a === 'export-copy') {
+      var ta = document.getElementById('ex-text');
+      try { await navigator.clipboard.writeText(S.exportText); } catch (er) { ta.select(); document.execCommand('copy'); }
+      toast('Copied'); return;
+    }
+    if (a === 'export-download') {
+      var blob = new Blob([S.exportText], { type: 'text/plain' });
+      var link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'chapters-activity-' + today() + '.txt';
+      document.body.appendChild(link); link.click(); link.remove(); return;
+    }
+    if (a === 'ev-approve') {
+      if (await act(function () { return q(sb.from('events').update({ status: 'approved' }).eq('id', id)); }, el)) { toast('Approved, points added'); rerender(); }
+      return;
+    }
+    if (a === 'ev-back') { var eb = box('ev-back-' + id); eb.hidden = !eb.hidden; if (!eb.hidden) document.getElementById('eb-' + id).focus(); return; }
+    if (a === 'ev-back-confirm') {
+      var efb = document.getElementById('eb-' + id).value.trim();
+      if (!efb) { document.getElementById('eb-' + id).focus(); return; }
+      if (await act(function () { return q(sb.from('events').update({ status: 'sent_back', feedback: efb }).eq('id', id)); }, el)) { toast('Sent back'); rerender(); }
+      return;
+    }
+    if (a === 'ev-delete' || a === 'plan-del' || a === 'idea-del' || a === 'recruit-del') {
+      if (el.getAttribute('data-sure') !== '1') { el.setAttribute('data-sure', '1'); el.textContent = 'Tap again to delete'; return; }
+      var tbl = { 'ev-delete': 'events', 'plan-del': 'plans', 'idea-del': 'ideas', 'recruit-del': 'recruits' }[a];
+      if (await act(function () { return q(sb.from(tbl).delete().eq('id', id)); }, el)) { closeModal(); toast('Deleted'); rerender(); }
+      return;
+    }
+    if (a === 'idea-vote') {
+      var on = el.getAttribute('aria-pressed') === 'true';
+      var ok2 = await act(function () {
+        return on ? q(sb.from('idea_votes').delete().eq('idea_id', id).eq('person', S.me.id))
+          : q(sb.from('idea_votes').insert({ idea_id: id, person: S.me.id }));
+      }, el);
+      if (ok2) {
+        var n = +el.querySelector('b').textContent + (on ? -1 : 1);
+        el.querySelector('b').textContent = n; el.setAttribute('aria-pressed', String(!on)); el.classList.toggle('on', !on); el.disabled = false;
+      }
+      return;
+    }
+    if (a === 'idea-replies') {
+      var ib = box('idea-' + id); if (!ib) return;
+      ib.hidden = !ib.hidden;
+      if (!ib.hidden) await act(function () { return loadIdeaReplies(id); });
+      return;
+    }
+    if (a === 'idea-reply-post') {
+      var ri = document.getElementById('ir-' + id), rb = ri.value.trim();
+      if (!rb) { ri.focus(); return; }
+      if (await act(function () { return q(sb.from('idea_replies').insert({ idea_id: id, author: S.me.id, body: rb })); }, el)) await loadIdeaReplies(id);
+      return;
+    }
     if (a === 'modal-close') { closeModal(); return; }
     if (a === 'new-task') { openTaskForm(el.getAttribute('data-pid') || S.me.id); return; }
     if (a === 'person-edit') { openPersonForm(id); return; }
@@ -1018,7 +1654,8 @@
         var items = await loadPending();
         for (var i = 0; i < items.length; i++) {
           var it = items[i];
-          if (it.type === 'ci') await q(sb.from('checkins').update({ status: 'approved' }).eq('id', it.row.id));
+          if (it.type === 'ev') await q(sb.from('events').update({ status: 'approved' }).eq('id', it.row.id));
+          else if (it.type === 'ci') await q(sb.from('checkins').update({ status: 'approved' }).eq('id', it.row.id));
           else await q(sb.from('tasks').update({ status: 'done' }).eq('id', it.row.id));
         }
       }, el);
@@ -1033,8 +1670,17 @@
 
   document.addEventListener('change', async function (ev) {
     var el = ev.target;
-    if (el.getAttribute('data-action') !== 'task-status') return;
+    var ca = el.getAttribute('data-action');
     var id = el.getAttribute('data-id');
+    if (ca === 'idea-status') {
+      if (await act(function () { return q(sb.from('ideas').update({ status: el.value }).eq('id', id)); })) toast('Updated');
+      return;
+    }
+    if (ca === 'recruit-status') {
+      if (await act(function () { return q(sb.from('recruits').update({ status: el.value }).eq('id', id)); })) { toast('Updated'); rerender(); }
+      return;
+    }
+    if (ca !== 'task-status') return;
     var ok = await act(function () { return q(sb.from('tasks').update({ status: el.value }).eq('id', id)); });
     if (ok) { toast('Status updated'); rerender(); }
   });
