@@ -240,3 +240,39 @@ textarea.input{height:auto;min-height:88px;padding:10px 12px;resize:vertical}
 }
 .av.photo{padding:0;overflow:hidden;background:#fff}
 .av.photo img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* streak calendar */
+.cal .d-worked.s0{background:var(--violet);color:#fff}
+.cal .d-worked.s1{background:var(--pink);color:var(--ink)}
+.cal .d-worked.s2{background:var(--lime);color:var(--ink)}
+.cal .d-worked.s3{background:var(--sky);color:var(--ink)}
+.cal .d-worked.s4{background:var(--peach);color:var(--ink)}
+.streak-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.streak{border:var(--b);border-radius:14px;padding:8px 12px;display:flex;align-items:baseline;gap:8px;background:#fff;box-shadow:var(--sh-sm)}
+.streak b{font-size:24px}
+.streak span{font-size:12.5px;font-weight:600;color:var(--muted)}
+.streak.hot{background:var(--lime)}
+.streak.hot span{color:var(--ink)}
+
+/* home to-do lines */
+.todo{display:flex;align-items:center;gap:10px;background:#fff;color:var(--ink);border:var(--b);border-radius:14px;padding:10px 12px;font-weight:600;font-size:14.5px;box-shadow:var(--sh-sm)}
+.todo .dot{width:12px;height:12px;border-radius:50%;background:var(--pink);border:2px solid var(--ink);flex-shrink:0}
+.todo .btn{flex-shrink:0}
+
+/* team calendar */
+.tc-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.tc-cell{min-height:64px;border:2px solid #DDD6F3;border-radius:12px;background:#fff;padding:4px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;cursor:pointer;text-align:left;font-family:inherit}
+.tc-cell.empty{border:0;background:transparent;cursor:default}
+.tc-cell.now{border-color:var(--ink);border-style:dashed}
+.tc-cell.sel{border:var(--b);background:var(--lav);box-shadow:var(--sh-sm)}
+.tc-cell.off{background:#F1EEF8}
+.tc-n{font-size:12px;font-weight:700}
+.tc-dots{display:flex;flex-wrap:wrap;gap:3px;align-items:center}
+.tc-dots em{font-style:normal;font-size:10px;font-weight:700;color:var(--muted)}
+.tc-dot{display:inline-block;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--ink)}
+.legend .tc-dot{margin-right:5px;vertical-align:-1px}
+.tc-dot.event{background:var(--lime)}
+.tc-dot.work{background:var(--violet)}
+.tc-dot.wait{background:var(--peach)}
+.tc-dot.off{background:#D9D4E8;border-color:#A7A0C0}
+@media (min-width:600px){.tc-cell{min-height:80px;padding:6px}.tc-dot{width:12px;height:12px}}

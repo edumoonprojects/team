@@ -122,7 +122,7 @@
     unwell: { label: 'Not well' },
     no_task: { label: 'No task given' }
   };
-  var WORK_KINDS = ['video', 'event', 'whatsapp', 'college', 'other'];
+  var WORK_KINDS = ['video', 'whatsapp', 'college', 'other'];
   var OFF_KINDS = ['exams', 'family', 'unwell', 'no_task'];
 
   var STATUS = {
@@ -251,8 +251,8 @@
     S.rules = {}; S.ruleList = [];
     try {
       var rows = await q(sb.from('point_rules').select('*').order('sort'));
-      S.ruleList = rows;
       rows.forEach(function (r) { S.rules[r.type] = r; });
+      S.ruleList = rows.filter(function (r) { return r.type !== 'streak'; });
     } catch (e) { /* upgrade-2.sql not run yet */ S.noUpgrade = true; }
   }
   async function loadOffDays() {
@@ -312,7 +312,7 @@
     $view.className = 'view';
     $top.hidden = false;
     $top.innerHTML =
-      '<a class="brand" href="#/home"><img src="assets/logo.png" alt=""><b>EduMoon</b><span>Team</span></a>' +
+      '<a class="brand" href="#/home"><img src="assets/logo.png" alt=""><b>EduMoon</b></a>' +
       '<div class="spacer"></div>' +
       '<div class="who"><span class="nm">' + esc(first(S.me.name)) + '</span>' +
       '<button class="btn sm" data-action="signout">Sign out</button></div>';
@@ -337,6 +337,7 @@
     items.push(['checkin', 'Check-in', ICON.checkin, true]);
     items.push(['events', 'Events', ICON.events, !canApprove()]);
     items.push(['leaderboard', 'Leaderboard', ICON.trophy, false]);
+    if (canApprove()) items.push(['calendar', 'Calendar', ICON.checkin, false]);
     if (hasTeamView()) items.push(['team', 'Team', ICON.team, false]);
     if (canRecruit()) items.push(['recruit', 'Recruit', ICON.recruit, false]);
     if (S.me.is_admin) items.push(['admin', 'Admin', ICON.admin, false]);
@@ -375,11 +376,12 @@
     window.scrollTo(0, 0);
     var my = ++seq;
     var go;
-    if (S.noUpgrade && ['home', 'events', 'leaderboard', 'recruit'].indexOf(key) >= 0) {
+    if (S.noUpgrade && ['home', 'events', 'leaderboard', 'recruit', 'calendar'].indexOf(key) >= 0) {
       $view.innerHTML = '<div class="card stack"><h2>One more setup step</h2><p class="muted" style="margin:0">Run <b>setup/upgrade-2.sql</b> in the Supabase SQL Editor once, then refresh this page.</p></div>';
       return;
     }
-    if (key === 'home') go = viewHome(my);
+    if (key === 'calendar' && canApprove()) go = viewTeamCal(my);
+    else if (key === 'home') go = viewHome(my);
     else if (key === 'events') go = viewEvents(my);
     else if (key === 'leaderboard') go = viewLeaderboard(my);
     else if (key === 'recruit' && canRecruit()) go = viewRecruit(my);
@@ -415,10 +417,11 @@
     var t0 = today();
     return function (day) {
       if (day > t0) return 'future';
-      if (start && day < start) return 'none';
       var c = ci[day];
+      // approved work always shows, even before tracking started (e.g. imported past events)
       if (c && c.status === 'approved') return 'worked';
       if (done[day]) return 'worked';
+      if (start && day < start) return 'none';
       if (c && (c.status === 'pending' || c.status === 'sent_back')) return 'pending';
       if (sub[day]) return 'pending';
       if (c && c.status === 'excused') return 'excused';
@@ -436,14 +439,39 @@
     }
     return n;
   }
+  // streaks: approved days in a row. Excused, off and waiting days do not break a streak.
+  function streakInfo(statusOf, start) {
+    var cur = 0, d = today(), guard = 0;
+    while (guard++ < 400) {
+      var st = statusOf(d);
+      if (st === 'worked') cur++;
+      else if (st === 'missed' || st === 'none') break;
+      if (start && d <= start) break;
+      d = addDays(d, -1);
+    }
+    return cur;
+  }
+  function runPositions(statusOf, from, to) {
+    var pos = {}, run = 0;
+    for (var d = from; d <= to; d = addDays(d, 1)) {
+      var st = statusOf(d);
+      if (st === 'worked') { run++; pos[d] = run; }
+      else if (st === 'missed' || st === 'none') run = 0;
+    }
+    return pos;
+  }
   function calendarHtml(pid, month, statusOf) {
+    var runs = runPositions(statusOf, addDays(month + '-01', -40), monthEnd(month));
+    var best = 0; Object.keys(runs).forEach(function (k) { if (k.slice(0, 7) === month && runs[k] > best) best = runs[k]; });
+    var cur = month === today().slice(0, 7) ? streakInfo(statusOf) : 0;
     var startDow = (new Date(month + '-01T00:00:00').getDay() + 6) % 7;
     var end = monthEnd(month), cells = '';
     for (var i = 0; i < startDow; i++) cells += '<div class="d-none"></div>';
     var titles = { worked: 'Worked, verified', pending: 'Waiting for verification', excused: 'Excused or off day', missed: 'Nothing logged', today: 'Today', future: '', none: '' };
     for (var d = month + '-01'; d <= end; d = addDays(d, 1)) {
       var s = statusOf(d);
-      cells += '<div class="d-' + s + '" title="' + esc(fmtDay(d) + (titles[s] ? ': ' + titles[s] : '')) + '">' + Number(d.slice(8)) + '</div>';
+      var extra = s === 'worked' && runs[d] ? ' s' + ((runs[d] - 1) % 5) : '';
+      cells += '<div class="d-' + s + extra + '" title="' + esc(fmtDay(d) + (titles[s] ? ': ' + titles[s] : '') + (runs[d] > 1 ? ', day ' + runs[d] + ' in a row' : '')) + '">' + Number(d.slice(8)) + '</div>';
     }
     var c = monthCounts(statusOf, month);
     var canNext = month < today().slice(0, 7);
@@ -452,9 +480,11 @@
       '<div style="text-align:center"><h2 style="font-size:17px;font-weight:600">' + esc(monthLabel(month)) + '</h2>' +
       '<div class="muted small">Worked ' + c.worked + ' · Waiting ' + c.pending + ' · Excused ' + c.excused + ' · Missed ' + c.missed + '</div></div>' +
       '<button class="btn sm" data-action="cal" data-pid="' + pid + '" data-m="' + shiftMonth(month, 1) + '" aria-label="Next month"' + (canNext ? '' : ' disabled') + '>' + ICON.chev + '</button></div>' +
+      '<div class="streak-row"><div class="streak' + (cur >= 3 ? ' hot' : '') + '"><b>' + cur + '</b><span>' + (cur === 1 ? 'day' : 'days') + ' in a row</span></div>' +
+      '<div class="streak"><b>' + best + '</b><span>best streak this month</span></div></div>' +
       '<div class="cal-head"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>' +
       '<div class="cal">' + cells + '</div>' +
-      '<div class="legend"><span><i style="background:var(--violet)"></i>Worked</span><span><i style="background:var(--lime)"></i>Waiting</span>' +
+      '<div class="legend"><span><i style="background:linear-gradient(90deg,var(--violet),var(--pink),var(--lime))"></i>Worked (colours build up as a streak)</span><span><i style="background:var(--lime)"></i>Waiting</span>' +
       '<span><i style="background:#E4E0F0"></i>Excused or off</span><span><i style="background:var(--badbg)"></i>Missed</span></div>' +
       '</div>';
   }
@@ -467,7 +497,7 @@
     var showCal = canSeeCheckins(p);
     var month = S.calMonth[pid] || today().slice(0, 7);
     var from = month + '-01';
-    var recentFrom = addDays(today(), -14);
+    var recentFrom = addDays(today(), -45);
     if (recentFrom < from) from = recentFrom;
     var to = monthEnd(month);
     if (today() > to) to = today();
@@ -512,7 +542,7 @@
       }
       h += '<section class="hero"><span class="hi">' + greet + '</span>' +
         '<div><h1>Hey ' + esc(first(p.name)) + '</h1>' +
-        '<div class="lead" style="margin-top:6px">Welcome to the EduMoon team. Here is your day.</div></div>' +
+        '<div class="lead" style="margin-top:6px">Here is your day.</div></div>' +
         '<div class="sub">' + esc(plan) + '</div>';
       var focus = open.slice(0, 3);
       if (focus.length) {
@@ -606,7 +636,9 @@
     if (c.status === 'excused') return '<span class="chip">Excused</span>';
     return '<span class="chip warn">Waiting for verification</span>';
   }
+  function canEditCi(p) { return !!(S.me.is_admin && canVerify(p)); }
   function checkinRow(c, p) {
+    S.ciCache = S.ciCache || {}; S.ciCache[c.id] = c;
     var k = KINDS[c.kind] || { label: c.kind };
     var h = '<div class="task" data-ci="' + c.id + '"><div class="row between wrap"><div style="min-width:0"><div class="t-title">' + esc(fmtDay(c.day)) + ' · ' + esc(k.label) + '</div>' +
       (c.detail ? '<div class="t-meta">' + esc(c.detail) + '</div>' : '') +
@@ -619,7 +651,31 @@
         '<div class="inline-box" data-box="ci-back-' + c.id + '" hidden><label class="lbl" for="fb-' + c.id + '">What should they fix?</label>' +
         '<input class="input" id="fb-' + c.id + '" maxlength="500"><button class="btn sm danger" data-action="ci-back-confirm" data-id="' + c.id + '">Send back</button></div>';
     }
+    if (canEditCi(p)) h += '<div class="acts"><button class="linkbtn" data-action="ci-edit" data-id="' + c.id + '">Edit check-in</button></div>';
     return h + '</div>';
+  }
+
+  // admins can correct what someone logged; saving counts as verified
+  function openCheckinEdit(id) {
+    var c = (S.ciCache || {})[id]; if (!c) return;
+    var p = S.byId[c.person];
+    var kinds = Object.keys(KINDS);
+    $modal.innerHTML = '<div class="modal-bg" data-action="modal-close-bg"><form class="modal stack" id="cie-form" novalidate role="dialog" aria-modal="true" aria-labelledby="cie-h">' +
+      '<div class="row between"><h2 id="cie-h" style="font-size:20px">Edit check-in</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
+      '<div class="muted small">' + esc(p ? p.name : '') + ' · ' + esc(fmtLongDay(c.day)) + '</div>' +
+      '<div class="field"><label class="lbl" for="cie-kind">What they did</label><select class="input" id="cie-kind">' +
+      kinds.map(function (k) { return '<option value="' + k + '"' + (k === c.kind ? ' selected' : '') + '>' + esc(KINDS[k].label) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label class="lbl" for="cie-detail">Details</label><input class="input" id="cie-detail" maxlength="500" value="' + esc(c.detail) + '"></div>' +
+      '<div class="field"><label class="lbl" for="cie-note">Note</label><textarea class="input" id="cie-note" maxlength="1000">' + esc(c.note) + '</textarea></div>' +
+      '<p class="muted tiny" style="margin:0">Saving marks this day as verified by you. Exams, family, not well and no task count as excused.</p>' +
+      '<div class="err" id="cie-err" role="alert"></div><button class="btn primary big" type="submit">Save</button></form></div>';
+    document.getElementById('cie-form').addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var $e = document.getElementById('cie-err'); $e.textContent = '';
+      var row = { kind: document.getElementById('cie-kind').value, detail: document.getElementById('cie-detail').value.trim() || null, note: document.getElementById('cie-note').value.trim() || null };
+      try { await q(sb.from('checkins').update(row).eq('id', id)); } catch (er) { $e.textContent = errMsg(er); return; }
+      closeModal(); toast('Check-in updated'); rerender();
+    });
   }
 
   function taskAge(t) {
@@ -754,6 +810,7 @@
       h += '<div class="card muted">This check-in is verified, so it can no longer be changed.</div>';
     } else {
       h += '<form id="ci-form" class="stack" novalidate>' +
+        (S.me.is_student_lead ? '<div class="card row between wrap" style="background:var(--lav);box-shadow:none"><div style="min-width:0"><b>Hosted an event?</b><div class="small">Log it under Events instead. It counts as your day and earns points.</div></div><button type="button" class="btn sm sky" data-action="log-event">Log an event</button></div>' : '') +
         '<fieldset class="opts" style="border:0;padding:0;margin:0"><legend style="font-weight:600;color:var(--ok);margin-bottom:8px">I worked</legend>' + WORK_KINDS.map(opt).join('') + '</fieldset>' +
         '<div class="field" id="ci-detail-wrap"' + (need ? '' : ' hidden') + '><label class="lbl" for="ci-detail" id="ci-detail-lbl">' + esc(need) + '</label><input class="input" id="ci-detail" maxlength="500" value="' + esc(cur ? cur.detail : '') + '"></div>' +
         '<fieldset class="opts two" style="border:0;padding:0;margin:0"><legend style="font-weight:600;color:var(--muted);margin-bottom:8px">I didn\'t work</legend>' + OFF_KINDS.map(opt).join('') + '</fieldset>' +
@@ -877,8 +934,10 @@
     } else if (i.type === 'ci') {
       var k = KINDS[r.kind] || { label: r.kind };
       head = 'Check-in · ' + fmtDay(r.day);
+      S.ciCache = S.ciCache || {}; S.ciCache[r.id] = r;
       body = '<div style="font-size:15px;font-weight:500">' + esc(k.label) + (r.detail ? ': ' + esc(r.detail) : '') + '</div>' +
-        (r.note ? '<div class="muted small">Note: ' + esc(r.note) + '</div>' : '');
+        (r.note ? '<div class="muted small">Note: ' + esc(r.note) + '</div>' : '') +
+        (canEditCi(p) ? '<button class="linkbtn" style="align-self:flex-start" data-action="ci-edit" data-id="' + r.id + '">Edit check-in</button>' : '');
     } else {
       head = 'Task done · ' + fmtWhen(r.submitted_at);
       body = '<div style="font-size:15px;font-weight:500">' + esc(r.title) + '</div>' +
@@ -1295,7 +1354,9 @@
       q(sb.from('ideas').select('*').order('created_at', { ascending: false }).limit(60)),
       q(sb.from('idea_votes').select('*').limit(5000)),
       q(sb.from('idea_replies').select('idea_id').limit(5000)),
-      canApprove() ? loadPending() : Promise.resolve([])
+      canApprove() ? loadPending() : Promise.resolve([]),
+      q(sb.from('checkins').select('*').eq('person', S.me.id).eq('day', today()).maybeSingle()),
+      q(sb.from('tasks').select('*').eq('assignee', S.me.id).in('status', ['todo', 'in_progress', 'waiting', 'submitted']).order('created_at', { ascending: false }))
     ]);
     if (my !== seq) return;
     var plans = res[0], wins = res[1], ranked = leadsRanked(res[2]).filter(function (r) { return r.s.points > 0; }).slice(0, 3);
@@ -1312,11 +1373,51 @@
     var pinned = plans.filter(function (x) { return x.pinned; });
     var upcoming = plans.filter(function (x) { return !x.pinned && (!x.day || x.day >= today()); });
 
+    // what needs doing right now
+    var todo = [];
+    if (!res[7]) todo.push(['You have not checked in today.', '<a class="btn sm" href="#/checkin">Check in now</a>']);
+    else if (res[7].status === 'sent_back') todo.push(['Your check-in was sent back. Fix it.', '<a class="btn sm" href="#/checkin">Fix it</a>']);
+    var myOpen = res[8].filter(function (t) { return t.status !== 'submitted'; });
+    var mySent = res[8].filter(function (t) { return t.status === 'submitted'; });
+    myOpen.sort(function (a, b) { var ad = a.due_date || '9999', bd = b.due_date || '9999'; return ad < bd ? -1 : ad > bd ? 1 : 0; });
+    var overdue = myOpen.filter(function (t) { return t.due_date && t.due_date < today(); }).length;
+    var dueToday = myOpen.filter(function (t) { return t.due_date === today(); }).length;
+    if (overdue) todo.push([overdue + (overdue === 1 ? ' task is' : ' tasks are') + ' overdue.', '<a class="btn sm" href="#/me">Open</a>']);
+    else if (dueToday) todo.push([dueToday + (dueToday === 1 ? ' task is' : ' tasks are') + ' due today.', '<a class="btn sm" href="#/me">Open</a>']);
+    if (S.me.is_student_lead) {
+      var allRank = leadsRanked(res[2]);
+      var myIdx = -1; allRank.forEach(function (r, i) { if (r.p.id === S.me.id) myIdx = i; });
+      var mine = myIdx >= 0 ? allRank[myIdx].s.points : 0;
+      if (mine === 0) todo.push(['No points yet this month. Host an event and get on the board.', '<button class="btn sm" data-action="log-event">Log an event</button>']);
+      else if (myIdx === 0) todo.push(['You are #1 this month with ' + mine + ' points. Hold the top spot.', '<a class="btn sm" href="#/leaderboard">See board</a>']);
+      else {
+        var gap = allRank[myIdx - 1].s.points - mine + 1;
+        todo.push(['You are #' + (myIdx + 1) + ' this month. ' + gap + ' more ' + (gap === 1 ? 'point' : 'points') + ' to pass ' + first(allRank[myIdx - 1].p.name) + '.', '<button class="btn sm" data-action="log-event">Log an event</button>']);
+      }
+    }
+    var next = upcoming[0];
+    var headline = todo.length ? todo.length + (todo.length === 1 ? ' thing needs you today' : ' things need you today') : 'You are all caught up. Keep the streak going.';
     var h = '<div class="stack"><section class="hero"><span class="hi">' + greet + '</span>' +
-      '<div><h1>Hey ' + esc(first(S.me.name)) + '</h1><div class="lead" style="margin-top:6px">Welcome to the EduMoon team. Here is what is happening.</div></div>' +
-      '<div class="row wrap" style="gap:8px"><a class="btn" href="#/checkin">Check in</a>' +
-      (S.me.is_student_lead ? '<button class="btn" data-action="log-event">Log an event</button>' : '') +
-      '<a class="btn" href="#/me">My tasks</a></div></section>';
+      '<div><h1>Hey ' + esc(first(S.me.name)) + '</h1><div class="lead" style="margin-top:6px;font-weight:600">' + esc(headline) + '</div></div>' +
+      (todo.length ? '<div class="focus">' + todo.map(function (t) {
+        return '<div class="todo"><span class="dot"></span><span style="flex:1;min-width:0">' + esc(t[0]) + '</span>' + t[1] + '</div>';
+      }).join('') + '</div>' : '') +
+      (next ? '<div class="sub">Next up: <b>' + esc(next.title) + '</b>' + (next.day ? ' · ' + esc(fmtDay(next.day)) : next.note ? ' · ' + esc(next.note) : '') + '</div>' : '') +
+      '</section>';
+    // my tasks, right on Home, with a one-tap Done
+    var givers = {};
+    myOpen.forEach(function (t) { if (t.created_by && t.created_by !== S.me.id) givers[first(nameOf(t.created_by))] = 1; });
+    var gv = Object.keys(givers);
+    h += '<div class="sec-h"><h2>Your tasks</h2>' + (S.me.is_admin || S.me.is_sl_head ? '<button class="btn sm sky" data-action="new-task" data-pid="">' + ICON.plus + 'Assign task</button>' : '<button class="btn sm" data-action="new-task" data-pid="">' + ICON.plus + 'Add my task</button>') + '</div>';
+    if (gv.length) h += '<div class="muted small" style="margin:-6px 2px 0;font-weight:600">' + esc((gv.length > 1 ? gv.slice(0, -1).join(', ') + ' and ' + gv[gv.length - 1] : gv[0]) + ' gave you ' + myOpen.filter(function (t) { return t.created_by !== S.me.id; }).length + ' to do') + '</div>';
+    h += '<div class="card flush list">' + (myOpen.length ? myOpen.map(function (t) {
+      var due = t.due_date ? (t.due_date < today() ? '<span class="chip bad">Overdue</span>' : t.due_date === today() ? '<span class="chip warn">Due today</span>' : '<span class="chip">Due ' + esc(fmtDay(t.due_date)) + '</span>') : '';
+      return '<div class="person"><div style="min-width:0;flex:1"><div class="nm">' + esc(t.title) + '</div>' +
+        '<div class="muted small">' + esc(t.created_by === S.me.id ? 'Added by me' : 'From ' + first(nameOf(t.created_by))) + '</div>' +
+        (due ? '<div style="margin-top:4px">' + due + '</div>' : '') + '</div>' +
+        '<button class="btn sm primary" data-action="home-done" data-id="' + t.id + '">Done</button></div>';
+    }).join('') : '<div class="empty">No tasks right now.</div>') + '</div>';
+    if (mySent.length) h += '<div class="muted small" style="margin:-4px 2px 0">' + mySent.length + (mySent.length === 1 ? ' task is' : ' tasks are') + ' waiting for approval.</div>';
     if (pending) h += '<a class="card row between" href="#/approvals" style="text-decoration:none;color:inherit;background:var(--lime)"><div><b style="font-size:17px">' + pending + (pending === 1 ? ' thing is' : ' things are') + ' waiting for your approval</b><div class="small">Tap to review</div></div>' + ICON.chev + '</a>';
     pinned.forEach(function (x) {
       h += '<div class="card" style="background:var(--peach)"><div class="row between" style="align-items:flex-start"><div><span class="chip" style="background:#fff">Announcement</span>' +
@@ -1482,6 +1583,63 @@
     });
   }
 
+  // ---------- team calendar (admins and the Lead Head) ----------
+  async function viewTeamCal(my) {
+    var month = S.tcMonth || today().slice(0, 7);
+    var from = month + '-01', to = monthEnd(month);
+    var res = await Promise.all([
+      q(sb.from('checkins').select('*').gte('day', from).lte('day', to).limit(5000)),
+      q(sb.from('events').select('*').gte('day', from).lte('day', to).neq('status', 'sent_back').limit(5000))
+    ]);
+    if (my !== seq) return;
+    var byDay = {};
+    function add(d, x) { (byDay[d] = byDay[d] || []).push(x); }
+    res[0].forEach(function (c) {
+      var p = S.byId[c.person];
+      if (!p || !canSeeCheckins(p) || c.status === 'sent_back') return;
+      var t = c.status === 'approved' ? 'work' : c.status === 'excused' ? 'off' : 'wait';
+      S.ciCache = S.ciCache || {}; S.ciCache[c.id] = c;
+      add(c.day, { t: t, p: p, label: (KINDS[c.kind] || { label: c.kind }).label + (c.detail ? ': ' + c.detail : ''), ci: c });
+    });
+    res[1].forEach(function (e) {
+      add(e.day, { t: e.status === 'approved' ? 'event' : 'wait', p: S.byId[e.person], label: e.title + ' · ' + ruleLabel(e.type) + (e.attendees != null ? ' · ' + e.attendees + ' joined' : ''), ev: e,
+        partners: (e.collab_with || []).map(function (id) { return first(nameOf(id)); }) });
+    });
+    var order = { event: 0, work: 1, wait: 2, off: 3 };
+    Object.keys(byDay).forEach(function (d) { byDay[d].sort(function (a, b) { return order[a.t] - order[b.t]; }); });
+    var sel = S.tcDay && S.tcDay.slice(0, 7) === month ? S.tcDay : (month === today().slice(0, 7) ? today() : from);
+    var totals = { event: 0, work: 0, wait: 0, off: 0 };
+    Object.keys(byDay).forEach(function (d) { byDay[d].forEach(function (x) { totals[x.t]++; }); });
+
+    var startDow = (new Date(from + 'T00:00:00').getDay() + 6) % 7, cells = '';
+    for (var i = 0; i < startDow; i++) cells += '<div class="tc-cell empty"></div>';
+    for (var d = from; d <= to; d = addDays(d, 1)) {
+      var list = byDay[d] || [];
+      var dots = list.slice(0, 8).map(function (x) { return '<i class="tc-dot ' + x.t + '"></i>'; }).join('') + (list.length > 8 ? '<em>+' + (list.length - 8) + '</em>' : '');
+      cells += '<button class="tc-cell' + (d === sel ? ' sel' : '') + (d === today() ? ' now' : '') + (S.offDays[d] ? ' off' : '') + '" data-action="tc-day" data-day="' + d + '" aria-label="' + esc(fmtDay(d) + ', ' + list.length + ' items') + '">' +
+        '<span class="tc-n">' + Number(d.slice(8)) + '</span><span class="tc-dots">' + dots + '</span></button>';
+    }
+    var items = byDay[sel] || [];
+    var tags = { event: '<span class="chip" style="background:var(--lime)">Event</span>', work: '<span class="chip navy">Worked</span>', wait: '<span class="chip warn">Waiting</span>', off: '<span class="chip">Excused</span>' };
+    var canNext = month < today().slice(0, 7);
+    var h = '<div class="stack"><div><h1 style="font-size:28px;font-weight:700">Team calendar</h1><div class="muted">Everyone\'s work and events in one place</div></div>' +
+      '<div class="card stack"><div class="row between"><button class="btn sm" data-action="tc-month" data-m="' + shiftMonth(month, -1) + '" aria-label="Previous month">' + ICON.left + '</button>' +
+      '<div style="text-align:center"><h2 style="font-size:18px">' + esc(monthLabel(month)) + '</h2><div class="muted small">' + totals.event + ' events · ' + totals.work + ' worked days · ' + totals.wait + ' waiting</div></div>' +
+      '<button class="btn sm" data-action="tc-month" data-m="' + shiftMonth(month, 1) + '" aria-label="Next month"' + (canNext ? '' : ' disabled') + '>' + ICON.chev + '</button></div>' +
+      '<div class="cal-head"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>' +
+      '<div class="tc-grid">' + cells + '</div>' +
+      '<div class="legend"><span><i class="tc-dot event"></i>Event</span><span><i class="tc-dot work"></i>Worked</span><span><i class="tc-dot wait"></i>Waiting approval</span><span><i class="tc-dot off"></i>Excused</span></div></div>' +
+      '<div class="sec-h"><h2>' + esc(fmtLongDay(sel)) + '</h2><span class="muted small" style="font-weight:600">' + items.length + '</span></div>' +
+      (S.offDays[sel] ? '<div class="card" style="background:var(--soft);box-shadow:none">Team off day: ' + esc(S.offDays[sel]) + '</div>' : '') +
+      '<div class="card flush list">' + (items.length ? items.map(function (x) {
+        var who = x.p ? first(x.p.name) + (x.partners && x.partners.length ? ' and ' + x.partners.join(', ') : '') : 'Someone';
+        return '<div class="person">' + avatar(x.p, '') + '<div style="min-width:0;flex:1"><div class="nm" style="font-size:14.5px">' + esc(who) + '</div>' +
+          '<div class="muted small">' + esc(x.label) + '</div>' +
+          (x.ci && canEditCi(x.p) ? '<button class="linkbtn" data-action="ci-edit" data-id="' + x.ci.id + '">Edit check-in</button>' : '') + '</div>' + tags[x.t] + '</div>';
+      }).join('') : '<div class="empty">Nothing logged on this day.</div>') + '</div></div>';
+    $view.innerHTML = h;
+  }
+
   // ---------- export for the Chapters site ----------
   async function openExport() {
     var rows = await q(sb.from('events').select('*').eq('status', 'approved').order('day').limit(5000));
@@ -1530,6 +1688,16 @@
 
     if (a === 'signout') { await sb.auth.signOut(); return; }
     if (a === 'more') { openMore(); return; }
+    if (a === 'ci-edit') { openCheckinEdit(id); return; }
+    if (a === 'home-done') {
+      var selfVerify = canVerify(S.me);
+      if (await act(function () { return q(sb.from('tasks').update({ status: selfVerify ? 'done' : 'submitted' }).eq('id', id)); }, el)) {
+        toast(selfVerify ? 'Marked done' : 'Sent for approval'); rerender();
+      }
+      return;
+    }
+    if (a === 'tc-day') { S.tcDay = el.getAttribute('data-day'); route(); return; }
+    if (a === 'tc-month') { S.tcMonth = el.getAttribute('data-m'); S.tcDay = null; route(); return; }
     if (a === 'log-event') { openEventForm(null); return; }
     if (a === 'ev-edit') { openEventForm(id); return; }
     if (a === 'ev-filter') { S.evFilter = el.getAttribute('data-f'); route(); return; }
