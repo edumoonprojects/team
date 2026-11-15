@@ -324,7 +324,8 @@
     $nav.innerHTML = items.map(function (it) {
       var extra = mainKeys.indexOf(it[0]) < 0 ? ' class="extra"' : '';
       return '<a href="#/' + it[0] + '" data-nav="' + it[0] + '"' + extra + '>' + it[2] + '<span>' + it[1] + '</span>' +
-        (it[0] === 'approvals' ? '<span class="badge" id="appr-badge" hidden></span>' : '') + '</a>';
+        (it[0] === 'approvals' ? '<span class="badge" id="appr-badge" hidden></span>' : '') +
+        (it[0] === 'home' ? '<span class="badge" id="home-badge" hidden></span>' : '') + '</a>';
     }).join('') +
       (items.length > main.length ? '<a href="#" class="more-btn" data-action="more">' + ICON.more + '<span>More</span></a>' : '');
     refreshBadge();
@@ -337,9 +338,8 @@
     items.push(['checkin', 'Check-in', ICON.checkin, true]);
     items.push(['events', 'Events', ICON.events, !canApprove()]);
     items.push(['leaderboard', 'Leaderboard', ICON.trophy, false]);
-    if (canApprove()) items.push(['calendar', 'Calendar', ICON.checkin, false]);
+    if (S.me.is_admin) items.push(['calendar', 'Calendar', ICON.checkin, false]);
     if (hasTeamView()) items.push(['team', 'Team', ICON.team, false]);
-    if (canRecruit()) items.push(['recruit', 'Recruit', ICON.recruit, false]);
     if (S.me.is_admin) items.push(['admin', 'Admin', ICON.admin, false]);
     return items;
   }
@@ -358,6 +358,11 @@
     });
   }
   async function refreshBadge() {
+    try {
+      var al = await loadAlerts();
+      var hb = document.getElementById('home-badge');
+      if (hb) { hb.textContent = al.length; hb.hidden = al.length === 0; }
+    } catch (e) { /* optional */ }
     if (!canApprove()) return;
     try {
       var items = await loadPending();
@@ -380,11 +385,10 @@
       $view.innerHTML = '<div class="card stack"><h2>One more setup step</h2><p class="muted" style="margin:0">Run <b>setup/upgrade-2.sql</b> in the Supabase SQL Editor once, then refresh this page.</p></div>';
       return;
     }
-    if (key === 'calendar' && canApprove()) go = viewTeamCal(my);
+    if (key === 'calendar' && S.me.is_admin) go = viewTeamCal(my);
     else if (key === 'home') go = viewHome(my);
     else if (key === 'events') go = viewEvents(my);
     else if (key === 'leaderboard') go = viewLeaderboard(my);
-    else if (key === 'recruit' && canRecruit()) go = viewRecruit(my);
     else if (key === 'me') go = viewPerson(S.me.id, my);
     else if (key === 'person') go = viewPerson(parts[1], my);
     else if (key === 'checkin') go = viewCheckin(my);
@@ -1202,6 +1206,10 @@
       acts += '<button class="btn sm primary" data-action="ev-approve" data-id="' + e.id + '">Approve</button>' +
         '<button class="btn sm danger" data-action="ev-back" data-id="' + e.id + '">Send back</button>';
     }
+    S.evAll = S.evAll || {}; S.evAll[e.id] = e;
+    if (e.status === 'approved' && (creditedIds(e).indexOf(me.id) >= 0 || me.is_admin)) {
+      acts += '<button class="btn sm sky" data-action="share-ev" data-id="' + e.id + '">Share card</button>';
+    }
     if ((e.person === me.id && e.status !== 'approved') || me.is_admin) {
       acts += '<button class="linkbtn" data-action="ev-edit" data-id="' + e.id + '">Edit</button>' +
         '<button class="linkbtn" style="color:var(--bad)" data-action="ev-delete" data-id="' + e.id + '">Delete</button>';
@@ -1309,7 +1317,7 @@
     var monthRows = rows.filter(function (e) { return e.day.slice(0, 7) === m; });
     var prevRanked = leadsRanked(rows.filter(function (e) { return e.day.slice(0, 7) === prev; }));
     var ranked = leadsRanked(S.lbPeriod === 'all' ? rows : monthRows);
-    var top = ranked.slice(0, 3), restList = ranked.slice(3);
+    var top = ranked.filter(function (r) { return r.s.points > 0; }).slice(0, 3), restList = [];
     function pod(r, place) {
       if (!r) return '<div></div>';
       var hgt = place === 1 ? 128 : place === 2 ? 96 : 76;
@@ -1327,11 +1335,19 @@
     } else {
       h += '<section class="podium">' + pod(top[1], 2) + pod(top[0], 1) + pod(top[2], 3) + '</section>';
     }
-    if (prevRanked.length && prevRanked[0].s.points > 0) {
-      h += '<div class="card row" style="background:var(--warnbg)"><div class="av gold">' + badgeIcon('top') + '</div><div><div style="font-weight:700">Top Student Lead of ' + esc(monthLabel(prev).split(' ')[0]) + '</div>' +
-        '<div class="small">' + esc(prevRanked[0].p.name) + ' · ' + prevRanked[0].s.points + ' points</div></div></div>';
+    var prevTop = prevRanked.filter(function (r) { return r.s.points > 0; }).slice(0, 3);
+    S.top3 = { month: prev, list: prevTop };
+    if (prevTop.length) {
+      h += '<div class="sec-h"><h2>Top 3 of ' + esc(monthLabel(prev)) + '</h2></div><div class="card flush list" style="background:var(--warnbg)">' + prevTop.map(function (r, i) {
+        var mine = r.p.id === S.me.id || S.me.is_admin;
+        return '<div class="person">' + avatar(r.p, i === 0 ? 'gold' : '') + '<div style="min-width:0;flex:1"><div class="nm">#' + (i + 1) + ' ' + esc(r.p.name) + '</div>' +
+          '<div class="muted small">' + r.s.points + ' points · ' + r.s.events + (r.s.events === 1 ? ' event' : ' events') + '</div></div>' +
+          (mine ? '<button class="btn sm sky" data-action="share-rank" data-i="' + i + '">Share</button>' : '') + '</div>';
+      }).join('') + '</div>';
     }
-    h += '<div class="sec-h"><h2>Rankings</h2></div><div class="card flush list">' + ranked.map(function (r, i) {
+    var started = ranked.filter(function (r) { return r.s.points > 0; });
+    var notYet = ranked.filter(function (r) { return r.s.points === 0; });
+    h += '<div class="sec-h"><h2>Rankings</h2></div><div class="card flush list">' + (started.length ? '' : '<div class="empty">Nobody on the board yet.</div>') + started.map(function (r, i) {
       var meRow = r.p.id === S.me.id;
       var tag = canSee(r.p) ? 'a' : 'div';
       return '<' + tag + ' class="person"' + (tag === 'a' ? ' href="#/person/' + r.p.id + '"' : '') + ' style="' + (meRow ? 'background:var(--lav)' : '') + '">' +
@@ -1339,7 +1355,12 @@
         '<div class="nm">' + esc(r.p.name) + (meRow ? ' <span class="chip navy">You</span>' : '') + '</div>' +
         '<div class="muted small">' + esc((r.p.chapter || 'Student Lead').split(',')[0]) + ' · ' + r.s.events + (r.s.events === 1 ? ' event' : ' events') + ' · ' + r.s.reached + ' reached</div></div>' +
         '<b style="font-size:18px">' + r.s.points + '</b></' + tag + '>';
-    }).join('') + '</div>' + pointsGuide() + '</div>';
+    }).join('') + '</div>' +
+      (notYet.length ? '<div class="sec-h"><h2>Not yet started' + (S.lbPeriod === 'month' ? ' this month' : '') + '</h2><span class="muted small" style="font-weight:600">' + notYet.length + '</span></div>' +
+        '<div class="card notyet"><p class="small muted" style="margin:0 0 10px">One event gets you on the board.</p><div class="ny-grid">' + notYet.map(function (r) {
+          return '<div class="ny">' + avatar(r.p, '') + '<span>' + esc(first(r.p.name)) + '</span></div>';
+        }).join('') + '</div></div>' : '') +
+      pointsGuide() + '</div>';
     void restList;
     $view.innerHTML = h;
   }
@@ -1356,7 +1377,12 @@
       q(sb.from('idea_replies').select('idea_id').limit(5000)),
       canApprove() ? loadPending() : Promise.resolve([]),
       q(sb.from('checkins').select('*').eq('person', S.me.id).eq('day', today()).maybeSingle()),
-      q(sb.from('tasks').select('*').eq('assignee', S.me.id).in('status', ['todo', 'in_progress', 'waiting', 'submitted']).order('created_at', { ascending: false }))
+      q(sb.from('tasks').select('*').eq('assignee', S.me.id).in('status', ['todo', 'in_progress', 'waiting', 'submitted']).order('created_at', { ascending: false })),
+      S.me.is_admin ? q(sb.from('tasks').select('*').neq('assignee', S.me.id).in('status', ['todo', 'in_progress', 'waiting']).limit(1000)) : Promise.resolve([]),
+      S.me.is_admin ? q(sb.from('checkins').select('person,day,status').gte('day', addDays(today(), -30)).limit(5000)) : Promise.resolve([]),
+      S.me.is_admin ? q(sb.from('events').select('person,collab_with,day,status').gte('day', addDays(today(), -30)).limit(5000)) : Promise.resolve([]),
+      S.me.is_admin ? q(sb.from('tasks').select('assignee,status,submitted_at,verified_at').gte('submitted_at', addDays(today(), -30) + 'T00:00:00').limit(5000)) : Promise.resolve([]),
+      loadAlerts()
     ]);
     if (my !== seq) return;
     var plans = res[0], wins = res[1], ranked = leadsRanked(res[2]).filter(function (r) { return r.s.points > 0; }).slice(0, 3);
@@ -1404,6 +1430,17 @@
       }).join('') + '</div>' : '') +
       (next ? '<div class="sub">Next up: <b>' + esc(next.title) + '</b>' + (next.day ? ' · ' + esc(fmtDay(next.day)) : next.note ? ' · ' + esc(next.note) : '') + '</div>' : '') +
       '</section>';
+    // new for you
+    var alerts = res[13] || [];
+    if (alerts.length) {
+      h += '<div class="card stack alerts" style="gap:10px"><div class="row between"><h2 style="font-size:18px">New for you <span class="chip" style="background:var(--pink)">' + alerts.length + '</span></h2>' +
+        '<button class="linkbtn" data-action="alerts-seen">Mark as seen</button></div>' +
+        alerts.map(function (a) {
+          return '<a class="alert-row" href="' + a.href + '"><span class="adot ' + a.tone + '"></span><span style="flex:1;min-width:0">' + esc(a.text) + '</span><span class="tiny muted">' + esc(fmtWhen(a.at)) + '</span></a>';
+        }).join('') + '</div>';
+    }
+    if (S.me.is_admin) h += weeklySummary(res[9], res[10], res[11], res[12]) + pendingFromTeam(res[9]);
+
     // my tasks, right on Home, with a one-tap Done
     var givers = {};
     myOpen.forEach(function (t) { if (t.created_by && t.created_by !== S.me.id) givers[first(nameOf(t.created_by))] = 1; });
@@ -1583,6 +1620,259 @@
     });
   }
 
+  // ---------- new for you ----------
+  function seenKey() { return 'em_seen_' + S.me.id; }
+  function lastSeen() {
+    try { var v = localStorage.getItem(seenKey()); if (v) return v; } catch (e) { /* storage blocked */ }
+    return new Date(Date.now() - 3 * 86400000).toISOString();
+  }
+  function markSeen() { try { localStorage.setItem(seenKey(), new Date().toISOString()); } catch (e) { /* ignore */ } }
+  async function loadAlerts() {
+    if (!S.me) return [];
+    var since = lastSeen(), me = S.me.id;
+    var res = await Promise.all([
+      q(sb.from('tasks').select('id,title,created_by,created_at').eq('assignee', me).neq('created_by', me).gt('created_at', since).limit(50)),
+      q(sb.from('tasks').select('id,title,verified_by,verified_at').eq('assignee', me).eq('status', 'done').gt('verified_at', since).limit(50)),
+      q(sb.from('checkins').select('id,day,status,feedback,verified_by,verified_at').eq('person', me).in('status', ['approved', 'sent_back']).gt('verified_at', since).limit(50)),
+      S.noUpgrade ? Promise.resolve([]) : q(sb.from('events').select('id,title,status,points,feedback,verified_by,verified_at,person,collab_with').or('person.eq.' + me + ',collab_with.cs.{' + me + '}').in('status', ['approved', 'sent_back']).gt('verified_at', since).limit(50))
+    ]);
+    var out = [];
+    res[0].forEach(function (t) { out.push({ at: t.created_at, tone: 'task', href: '#/me', text: first(nameOf(t.created_by)) + ' gave you a task: ' + t.title }); });
+    res[1].forEach(function (t) { if (t.verified_by !== me) out.push({ at: t.verified_at, tone: 'ok', href: '#/me', text: 'Task approved by ' + first(nameOf(t.verified_by)) + ': ' + t.title }); });
+    res[2].forEach(function (c) {
+      if (c.verified_by === me) return;
+      out.push(c.status === 'approved' ?
+        { at: c.verified_at, tone: 'ok', href: '#/checkin', text: 'Your check-in for ' + fmtDay(c.day) + ' was verified by ' + first(nameOf(c.verified_by)) } :
+        { at: c.verified_at, tone: 'bad', href: '#/checkin', text: 'Your check-in for ' + fmtDay(c.day) + ' was sent back' + (c.feedback ? ': ' + c.feedback : '') });
+    });
+    res[3].forEach(function (e) {
+      if (e.verified_by === me) return;
+      out.push(e.status === 'approved' ?
+        { at: e.verified_at, tone: 'ok', href: '#/events', text: 'Your event ' + e.title + ' was approved, +' + evPoints(e) + ' points. Share your card.' } :
+        { at: e.verified_at, tone: 'bad', href: '#/events', text: 'Your event ' + e.title + ' was sent back' + (e.feedback ? ': ' + e.feedback : '') });
+    });
+    out.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+    return out.slice(0, 10);
+  }
+
+  // ---------- weekly summary for admins ----------
+  function weeklySummary(openTasks, cis, evs, doneTasks) {
+    var from = addDays(today(), -6), t0 = today();
+    var inWeek = function (d) { return d && d >= from && d <= t0; };
+    var worked = {}, evCount = 0, perPerson = {}, last = {};
+    function bump(pid, n) { perPerson[pid] = (perPerson[pid] || 0) + n; }
+    function seen(pid, d) { if (d && (!last[pid] || d > last[pid])) last[pid] = d; }
+    cis.forEach(function (c) {
+      if (c.status !== 'sent_back') seen(c.person, c.day);
+      if (c.status === 'approved' && inWeek(c.day)) { worked[c.person + '|' + c.day] = 1; }
+    });
+    evs.forEach(function (e) {
+      creditedIds(e).forEach(function (pid) {
+        if (e.status !== 'sent_back') seen(pid, e.day);
+        if (e.status === 'approved' && inWeek(e.day)) { worked[pid + '|' + e.day] = 1; bump(pid, 2); }
+      });
+      if (e.status === 'approved' && inWeek(e.day)) evCount++;
+    });
+    var tasksDone = 0;
+    doneTasks.forEach(function (t) {
+      seen(t.assignee, tsDay(t.submitted_at));
+      if (t.status === 'done' && inWeek(tsDay(t.verified_at))) { tasksDone++; bump(t.assignee, 1); }
+    });
+    Object.keys(worked).forEach(function (k) { bump(k.split('|')[0], 1); });
+    var overdue = openTasks.filter(function (t) { return t.due_date && t.due_date < t0; }).length;
+    var active = Object.keys(perPerson).filter(function (id) { return S.byId[id]; })
+      .sort(function (a, b) { return perPerson[b] - perPerson[a]; }).slice(0, 3);
+    var people = S.people.filter(function (p) { return p.active && !p.is_private && !p.is_admin && p.id !== S.me.id && canSeeCheckins(p); });
+    var notYet = people.map(function (p) {
+      var d = last[p.id];
+      return { p: p, gap: d ? daysBetween(d, t0) : null };
+    }).filter(function (x) { return x.gap === null || x.gap >= 5; })
+      .sort(function (a, b) { return (b.gap === null ? 999 : b.gap) - (a.gap === null ? 999 : a.gap); });
+    var h = '<div class="card stack week" style="gap:12px"><div class="row between"><h2 style="font-size:18px">This week</h2><span class="muted small" style="font-weight:600">' + esc(fmtDay(from) + ' to ' + fmtDay(t0)) + '</span></div>' +
+      '<div class="grid2" style="grid-template-columns:repeat(4,minmax(0,1fr))">' +
+      '<div class="stat" style="background:var(--lime)"><b>' + evCount + '</b><span style="color:var(--ink)">Events</span></div>' +
+      '<div class="stat"><b>' + Object.keys(worked).length + '</b><span>Worked days</span></div>' +
+      '<div class="stat"><b>' + tasksDone + '</b><span>Tasks done</span></div>' +
+      '<div class="stat" style="' + (overdue ? 'background:var(--badbg)' : '') + '"><b>' + overdue + '</b><span>Overdue</span></div></div>';
+    if (active.length) h += '<div class="small"><b>Most active:</b> ' + active.map(function (id) { return '<a href="#/person/' + id + '">' + esc(first(nameOf(id))) + '</a>'; }).join(', ') + '</div>';
+    if (notYet.length) {
+      h += '<div><div class="small" style="font-weight:700;margin-bottom:6px">Not yet started</div><div class="ny-list">' + notYet.slice(0, 8).map(function (x) {
+        return '<a class="ny-row" href="#/person/' + x.p.id + '">' + avatar(x.p, '') + '<span style="flex:1;min-width:0"><b>' + esc(first(x.p.name)) + '</b> <span class="muted small">' +
+          esc(x.gap === null ? 'no activity yet' : 'no activity in ' + x.gap + ' days') + '</span></span></a>';
+      }).join('') + (notYet.length > 8 ? '<div class="muted small">and ' + (notYet.length - 8) + ' more</div>' : '') + '</div></div>';
+    }
+    return h + '</div>';
+  }
+
+  // ---------- pending from the team (admins) ----------
+  function pendingFromTeam(openTasks) {
+    var t0 = today(), f = S.pfFilter || 'all';
+    S.taskCache = S.taskCache || {};
+    var list = openTasks.filter(function (t) {
+      S.taskCache[t.id] = t;
+      if (!S.byId[t.assignee]) return false;
+      if (f === 'overdue') return t.due_date && t.due_date < t0;
+      if (f === 'mine') return t.created_by === S.me.id;
+      return true;
+    }).sort(function (a, b) {
+      var ao = a.due_date && a.due_date < t0 ? 0 : 1, bo = b.due_date && b.due_date < t0 ? 0 : 1;
+      if (ao !== bo) return ao - bo;
+      var ad = a.due_date || '9999', bd = b.due_date || '9999';
+      return ad < bd ? -1 : ad > bd ? 1 : (a.created_at < b.created_at ? -1 : 1);
+    });
+    var shown = S.pfAll ? list : list.slice(0, 8);
+    var h = '<div class="sec-h"><h2>Pending from the team <span class="muted" style="font-size:15px">(' + openTasks.length + ')</span></h2></div>' +
+      '<div class="seg" role="group" aria-label="Filter pending">' + [['all', 'All'], ['overdue', 'Overdue'], ['mine', 'Assigned by me']].map(function (x) {
+        return '<button class="' + (f === x[0] ? 'on' : '') + '" data-action="pf-filter" data-f="' + x[0] + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + '</button>';
+      }).join('') + '</div>' +
+      '<div class="card flush list">' + (shown.length ? shown.map(function (t) {
+        var p = S.byId[t.assignee];
+        var chip = t.due_date && t.due_date < t0 ? '<span class="chip bad">Overdue ' + daysBetween(t.due_date, t0) + 'd</span>' :
+          t.due_date ? '<span class="chip">Due ' + esc(fmtDay(t.due_date)) + '</span>' :
+          '<span class="chip ' + (STATUS[t.status] || {}).cls + '">' + esc((STATUS[t.status] || { label: t.status }).label) + '</span>';
+        return '<div class="person">' + avatar(p, '') + '<a href="#/person/' + p.id + '" style="min-width:0;flex:1;text-decoration:none;color:inherit">' +
+          '<div class="nm" style="font-size:14.5px">' + esc(first(p.name)) + ' · ' + esc(t.title) + '</div>' +
+          '<div style="margin-top:4px" class="row wrap">' + chip + '<span class="muted tiny">from ' + esc(t.created_by === S.me.id ? 'you' : first(nameOf(t.created_by))) + '</span></div></a>' +
+          '<button class="btn sm" data-action="remind" data-id="' + t.id + '">Remind</button></div>';
+      }).join('') : '<div class="empty">Nothing pending here. Nice.</div>') + '</div>' +
+      (list.length > 8 ? '<button class="linkbtn" data-action="pf-all">' + (S.pfAll ? 'Show less' : 'Show all ' + list.length) + '</button>' : '');
+    return h;
+  }
+  function remindTask(id) {
+    var t = (S.taskCache || {})[id]; if (!t) return;
+    var p = S.byId[t.assignee], t0 = today();
+    var msg = 'Hi ' + first(p.name) + ', a quick reminder about "' + t.title + '"';
+    if (t.due_date && t.due_date < t0) msg += '. It is ' + daysBetween(t.due_date, t0) + ' days overdue';
+    else if (t.due_date) msg += ', due ' + fmtDay(t.due_date);
+    msg += '. Please update it on the EduMoon Team portal: ' + location.origin + location.pathname;
+    var w = window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+    if (!w) {
+      try { navigator.clipboard.writeText(msg); toast('Reminder copied. Paste it in WhatsApp.'); } catch (e) { toast('Could not open WhatsApp'); }
+    }
+  }
+
+  // ---------- share cards ----------
+  function loadImg(src) {
+    return new Promise(function (ok) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { ok(null); }; i.src = src; });
+  }
+  function rrect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+  function wrap(c, text, maxW, maxLines) {
+    var words = String(text).split(/\s+/), lines = [], line = '';
+    words.forEach(function (w) { var t = line ? line + ' ' + w : w; if (c.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; });
+    if (line) lines.push(line);
+    if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] += '...'; }
+    return lines;
+  }
+  function fitFont(c, text, weight, size, minSize, maxW) {
+    var f = size; c.font = weight + ' ' + f + 'px "Space Grotesk", sans-serif';
+    while (c.measureText(text).width > maxW && f > minSize) { f -= 2; c.font = weight + ' ' + f + 'px "Space Grotesk", sans-serif'; }
+    return f;
+  }
+  var INK = '#16132B', VIOLET = '#6C47FF', LIME = '#C4F23A', PINK = '#FF7AC6', CREAM = '#FFF8EC', PEACH = '#FFB86B';
+  async function drawCard(cv, d, square) {
+    var W = 1080, H = square ? 1080 : 1920;
+    cv.width = W; cv.height = H;
+    var c = cv.getContext('2d');
+    try { await document.fonts.load('700 60px "Space Grotesk"'); await document.fonts.load('500 30px "Space Grotesk"'); } catch (e) { /* fallback font */ }
+    var photo = d.p && d.p.photo ? await loadImg('assets/photos/' + d.p.photo + '?v=1') : null;
+    var logo = await loadImg('assets/logo.png');
+    c.fillStyle = VIOLET; c.fillRect(0, 0, W, H);
+    c.lineWidth = 6; c.strokeStyle = INK;
+    c.fillStyle = PINK; c.beginPath(); c.arc(W - 60, square ? 40 : 120, 230, 0, Math.PI * 2); c.fill(); c.stroke();
+    c.save(); c.translate(150, H - 60); c.rotate(0.3); c.fillStyle = LIME; rrect(c, -140, -140, 280, 280, 60); c.fill(); c.stroke(); c.restore();
+    // header
+    var hy = square ? 70 : 120;
+    if (logo) { c.save(); rrect(c, 70, hy - 40, 84, 84, 22); c.clip(); c.drawImage(logo, 70, hy - 40, 84, 84); c.restore(); rrect(c, 70, hy - 40, 84, 84, 22); c.stroke(); }
+    c.fillStyle = '#fff'; c.font = '700 54px "Space Grotesk", sans-serif'; c.textBaseline = 'middle'; c.fillText('EduMoon', 176, hy + 2);
+    // card
+    var cx = 70, cy = square ? 160 : 240, cw = W - 140, ch = square ? 840 : 1580;
+    c.fillStyle = INK; rrect(c, cx + 16, cy + 16, cw, ch, 48); c.fill();
+    c.fillStyle = CREAM; rrect(c, cx, cy, cw, ch, 48); c.fill(); c.lineWidth = 6; c.stroke();
+    var pr = square ? 105 : 170, px = square ? cx + 70 + pr : W / 2, py = square ? cy + 70 + pr : cy + 70 + pr;
+    c.save(); c.beginPath(); c.arc(px, py, pr, 0, Math.PI * 2); c.closePath(); c.clip();
+    if (photo) {
+      var sz = Math.min(photo.width, photo.height);
+      c.drawImage(photo, (photo.width - sz) / 2, (photo.height - sz) / 2, sz, sz, px - pr, py - pr, pr * 2, pr * 2);
+    } else { c.fillStyle = LIME; c.fillRect(px - pr, py - pr, pr * 2, pr * 2); c.fillStyle = INK; c.font = '700 ' + Math.round(pr * 0.8) + 'px "Space Grotesk", sans-serif'; c.textAlign = 'center'; c.fillText(initials(d.p ? d.p.name : '?'), px, py + 4); c.textAlign = 'left'; }
+    c.restore(); c.beginPath(); c.arc(px, py, pr, 0, Math.PI * 2); c.lineWidth = 8; c.stroke();
+    // text block
+    var tx, ty, tw, center = !square;
+    if (square) { tx = px + pr + 50; ty = cy + 110; tw = cx + cw - 60 - tx; } else { tx = W / 2; ty = py + pr + 110; tw = cw - 120; }
+    c.textAlign = center ? 'center' : 'left'; c.textBaseline = 'alphabetic';
+    c.fillStyle = INK; fitFont(c, d.p ? d.p.name : '', 700, square ? 56 : 84, 36, tw); c.fillText(d.p ? d.p.name : '', tx, ty);
+    ty += square ? 52 : 75; c.fillStyle = '#4A4566'; c.font = '600 ' + (square ? 30 : 42) + 'px "Space Grotesk", sans-serif';
+    c.fillText(d.idLine, tx, ty);
+    ty += square ? 44 : 62; c.font = '500 ' + (square ? 28 : 38) + 'px "Space Grotesk", sans-serif';
+    wrap(c, d.college || '', tw, 2).forEach(function (l) { c.fillText(l, tx, ty); ty += square ? 38 : 52; });
+    if (square) { tx = cx + 70; tw = cw - 140; ty = py + pr + 90; c.textAlign = 'left'; }
+    else ty += 80;
+    // pill
+    c.font = '700 ' + (square ? 30 : 44) + 'px "Space Grotesk", sans-serif';
+    var pw = c.measureText(d.pill).width + 64, ph = square ? 60 : 86;
+    var pxl = center ? tx - pw / 2 : tx;
+    c.fillStyle = LIME; rrect(c, pxl, ty - ph + 14, pw, ph, ph / 2); c.fill(); c.lineWidth = 5; c.stroke();
+    c.fillStyle = INK; c.textAlign = 'center'; c.fillText(d.pill, pxl + pw / 2, ty - ph / 2 + (square ? 26 : 30)); c.textAlign = center ? 'center' : 'left';
+    ty += square ? 70 : 120;
+    c.fillStyle = '#4A4566'; c.font = '600 ' + (square ? 32 : 46) + 'px "Space Grotesk", sans-serif'; c.fillText(d.kicker, tx, ty);
+    ty += square ? 64 : 100; c.fillStyle = INK; if (square) c.font = '700 58px "Space Grotesk", sans-serif'; else fitFont(c, d.title, 700, 96, 64, tw);
+    wrap(c, d.title, tw, 2).forEach(function (l) { c.fillText(l, tx, ty); ty += square ? 66 : 108; });
+    if (d.withLine) { c.font = '600 ' + (square ? 30 : 38) + 'px "Space Grotesk", sans-serif'; c.fillStyle = '#4A4566'; c.fillText(d.withLine, tx, ty - (square ? 12 : 20)); ty += square ? 40 : 50; }
+    ty += 20;
+    if (!square) ty = cy + ch - 270;
+    if (d.big) { c.fillStyle = VIOLET; c.font = '700 ' + (square ? 64 : 130) + 'px "Space Grotesk", sans-serif'; c.fillText(d.big, tx, ty); ty += square ? 46 : 70; c.fillStyle = INK; c.font = '600 ' + (square ? 30 : 40) + 'px "Space Grotesk", sans-serif'; c.fillText(d.bigLabel, tx, ty); }
+    // footer
+    var fy = cy + ch - (square ? 50 : 80);
+    c.font = '600 ' + (square ? 28 : 34) + 'px "Space Grotesk", sans-serif'; c.fillStyle = '#4A4566';
+    c.fillText(d.foot, center ? W / 2 : cx + 70, fy);
+    c.textAlign = 'left';
+  }
+  function eventCardData(e) {
+    var ids = creditedIds(e);
+    var subject = ids.indexOf(S.me.id) >= 0 ? S.me.id : e.person;
+    var p = S.byId[subject];
+    var others = ids.filter(function (x) { return x !== subject; }).map(function (x) { return first(nameOf(x)); });
+    return {
+      p: p, idLine: 'Student Lead' + (p && p.em_id ? ' · ' + p.em_id : ''), college: p && p.chapter,
+      pill: 'SUCCESSFULLY HOSTED', kicker: ruleLabel(e.type), title: e.title,
+      withLine: others.length ? 'with ' + others.join(', ') : '',
+      big: e.attendees != null ? e.attendees + '+' : '', bigLabel: 'students joined',
+      foot: fmtLongDay(e.day) + ' · +' + evPoints(e) + ' points · theedumoon.com'
+    };
+  }
+  function rankCardData(r, i, month) {
+    return {
+      p: r.p, idLine: 'Student Lead' + (r.p.em_id ? ' · ' + r.p.em_id : ''), college: r.p.chapter,
+      pill: '#' + (i + 1) + ' STUDENT LEAD', kicker: 'EduMoon Student Leads', title: 'Ranked #' + (i + 1) + ' in ' + monthLabel(month).split(' ')[0],
+      withLine: '', big: String(r.s.points), bigLabel: 'points · ' + r.s.events + (r.s.events === 1 ? ' event' : ' events') + ' · ' + r.s.reached + ' students reached',
+      foot: monthLabel(month) + ' · theedumoon.com'
+    };
+  }
+  async function openShare(d, fileBase) {
+    S.share = { d: d, square: false, name: fileBase };
+    $modal.innerHTML = '<div class="modal-bg" data-action="modal-close-bg"><div class="modal stack" role="dialog" aria-modal="true" aria-labelledby="sh-h">' +
+      '<div class="row between"><h2 id="sh-h" style="font-size:20px">Share your card</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
+      '<div class="seg" role="group" aria-label="Size"><button class="on" data-action="share-size" data-s="story" aria-pressed="true">Story</button><button data-action="share-size" data-s="square" aria-pressed="false">Square</button></div>' +
+      '<canvas id="share-cv" role="img" aria-label="Share card preview" style="width:100%;height:auto;border-radius:16px;border:var(--b)"></canvas>' +
+      '<div class="grid2"><button class="btn primary big" data-action="share-go">Share</button><button class="btn big" data-action="share-dl">Download</button></div>' +
+      '<p class="muted tiny" style="margin:0">Post it on your WhatsApp status or Instagram story and tag EduMoon.</p></div></div>';
+    await drawCard(document.getElementById('share-cv'), d, false);
+  }
+  function shareBlob() {
+    return new Promise(function (ok) { document.getElementById('share-cv').toBlob(ok, 'image/png'); });
+  }
+  async function shareGo() {
+    var blob = await shareBlob();
+    var file = new File([blob], S.share.name + '.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], text: 'Proud to be an EduMoon Student Lead' }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    shareDownload(blob);
+  }
+  function shareDownload(blob) {
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = S.share.name + '.png';
+    document.body.appendChild(a); a.click(); a.remove(); toast('Saved. Post it from your gallery.');
+  }
+
   // ---------- team calendar (admins and the Lead Head) ----------
   async function viewTeamCal(my) {
     var month = S.tcMonth || today().slice(0, 7);
@@ -1689,6 +1979,19 @@
     if (a === 'signout') { await sb.auth.signOut(); return; }
     if (a === 'more') { openMore(); return; }
     if (a === 'ci-edit') { openCheckinEdit(id); return; }
+    if (a === 'alerts-seen') { markSeen(); rerender(); return; }
+    if (a === 'pf-filter') { S.pfFilter = el.getAttribute('data-f'); route(); return; }
+    if (a === 'pf-all') { S.pfAll = !S.pfAll; route(); return; }
+    if (a === 'remind') { remindTask(id); return; }
+    if (a === 'share-ev') { var se = (S.evAll || {})[id]; if (se) await openShare(eventCardData(se), 'edumoon-' + se.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()); return; }
+    if (a === 'share-rank') { var rk = S.top3 && S.top3.list[+el.getAttribute('data-i')]; if (rk) await openShare(rankCardData(rk, +el.getAttribute('data-i'), S.top3.month), 'edumoon-top-' + S.top3.month); return; }
+    if (a === 'share-size') {
+      var sq = el.getAttribute('data-s') === 'square'; S.share.square = sq;
+      [].forEach.call(el.parentNode.children, function (b) { var on = b === el; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      await drawCard(document.getElementById('share-cv'), S.share.d, sq); return;
+    }
+    if (a === 'share-go') { await shareGo(); return; }
+    if (a === 'share-dl') { shareDownload(await shareBlob()); return; }
     if (a === 'home-done') {
       var selfVerify = canVerify(S.me);
       if (await act(function () { return q(sb.from('tasks').update({ status: selfVerify ? 'done' : 'submitted' }).eq('id', id)); }, el)) {
