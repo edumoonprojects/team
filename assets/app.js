@@ -36,6 +36,13 @@
     for (var i = 0; i < parts.length; i++) { if (parts[i].replace(/\./g, '').length > 2) return parts[i]; }
     return parts[0] || '';
   }
+  // profile picture, or initials when there is no photo
+  function avatar(p, cls) {
+    cls = cls ? ' ' + cls.trim() : '';
+    if (!p) return '<div class="av' + cls + '">?</div>';
+    if (p.photo) return '<div class="av photo' + cls + '"><img src="assets/photos/' + esc(p.photo) + '?v=1" alt="" loading="lazy"></div>';
+    return '<div class="av' + cls + '">' + esc(initials(p.name)) + '</div>';
+  }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function dstr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function today() { return dstr(new Date()); }
@@ -516,7 +523,7 @@
         }).join('') + '</div>';
       }
     } else {
-      h += '<section class="hero"><div class="row"><div class="av lg">' + esc(initials(p.name)) + '</div><div style="min-width:0">' +
+      h += '<section class="hero"><div class="row">' + avatar(p, 'lg') + '<div style="min-width:0">' +
         '<h1 style="font-size:26px">' + esc(p.name) + '</h1><div class="sub">' + esc(roleLine(p) || (p.is_student_lead ? 'Student Lead' : 'EduMoon team')) + '</div>' +
         (p.em_id ? '<div class="sub tiny">' + esc(p.em_id) + '</div>' : '') + '</div></div>';
     }
@@ -882,7 +889,7 @@
     var a = i.type;
     var boxPre = a === 'ci' ? 'ci-back-' : a === 'ev' ? 'ev-back-' : 'back-';
     var inPre = a === 'ci' ? 'fb-' : a === 'ev' ? 'eb-' : 'bk-';
-    return '<div class="card stack" style="gap:10px"><div class="row"><div class="av">' + esc(initials(p.name)) + '</div><div style="min-width:0">' +
+    return '<div class="card stack" style="gap:10px"><div class="row">' + avatar(p, '') + '<div style="min-width:0">' +
       '<div style="font-weight:600">' + esc(p.name) + '</div><div class="muted tiny">' + esc((isLeadOnly(p) || i.type === 'ev' ? 'Student Lead' : 'Team') + ' · ' + head) + '</div></div></div>' +
       body +
       '<div class="grid2"><button class="btn primary" data-action="' + a + '-approve" data-id="' + r.id + '">Approve</button>' +
@@ -920,7 +927,7 @@
           (c ? ciChip(c).replace('Waiting for verification', 'Checked in, waiting') : '<span class="chip">No check-in today</span>') +
           '<span class="chip sky">' + (worked[p.id] || 0) + ' days this month</span></div>';
       }
-      return '<a class="person" href="#/person/' + p.id + '"><div class="av">' + esc(initials(p.name)) + '</div><div style="min-width:0">' +
+      return '<a class="person" href="#/person/' + p.id + '">' + avatar(p, '') + '<div style="min-width:0">' +
         '<div class="nm">' + esc(p.name) + '</div><div class="muted small">' + esc(roleLine(p) || (p.is_student_lead ? 'Student Lead' : '')) + '</div>' +
         '<div class="muted small">' + esc(line.join(' · ')) + '</div>' + extra + '</div><span class="chev">' + ICON.chev + '</span></a>';
     }
@@ -965,7 +972,7 @@
       '<li>To reset a forgotten password: Supabase, Authentication, Users, open the person, and set a new password.</li></ol></details>' +
       '<div class="sec-h"><h2>People (' + people.length + ')</h2></div><div class="card flush list">' +
       people.map(function (p) {
-        return '<div class="person" style="align-items:flex-start"><div class="av">' + esc(initials(p.name)) + '</div><div style="min-width:0;flex:1">' +
+        return '<div class="person" style="align-items:flex-start">' + avatar(p, '') + '<div style="min-width:0;flex:1">' +
           '<div class="nm">' + esc(p.name) + '</div><div class="muted small">' + esc(roleLine(p)) + '</div>' +
           '<div class="small" style="margin:2px 0">' + (p.email ? esc(p.email) : '<span style="color:var(--bad);font-weight:600">No email yet</span>') +
           (p.user_id ? ' · <span style="color:var(--ok);font-weight:600">Has logged in</span>' : (p.email ? ' · <span class="muted">Not logged in yet</span>' : '')) + '</div>' +
@@ -1028,6 +1035,7 @@
       '<div class="row between"><h2 id="pf-h" style="font-size:20px">' + (id ? 'Edit person' : 'Add person') + '</h2><button type="button" class="btn sm" data-action="modal-close">Close</button></div>' +
       '<div class="field"><label class="lbl" for="pf-name">Full name</label><input class="input" id="pf-name" maxlength="120" value="' + esc(p.name) + '"></div>' +
       '<div class="field"><label class="lbl" for="pf-short">Short name (what the portal calls them)</label><input class="input" id="pf-short" maxlength="40" placeholder="e.g. Harshita" value="' + esc(p.short_name) + '"></div>' +
+      '<div class="field"><label class="lbl" for="pf-photo">Photo file (in assets/photos, optional)</label><input class="input" id="pf-photo" maxlength="80" placeholder="e.g. hardik.jpg" value="' + esc(p.photo) + '"></div>' +
       '<div class="field"><label class="lbl" for="pf-email">Email (used to log in)</label><input class="input" id="pf-email" type="email" value="' + esc(p.email) + '"></div>' +
       '<div class="field"><label class="lbl" for="pf-title">Role or work (shown on their card)</label><input class="input" id="pf-title" maxlength="120" placeholder="e.g. Video editor" value="' + esc(p.title) + '"></div>' +
       '<div class="field"><label class="lbl" for="pf-chapter">College (for Student Leads)</label><input class="input" id="pf-chapter" maxlength="120" value="' + esc(p.chapter) + '"></div>' +
@@ -1051,6 +1059,7 @@
         is_admin: c('is_admin'), is_private: c('is_private'), active: c('active')
       };
       if (!S.noUpgrade) row.short_name = v('short') || null;
+      if ('photo' in (S.people[0] || {})) row.photo = v('photo') || null;
       if (!row.name) { $e.textContent = 'Enter a name.'; return; }
       if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) { $e.textContent = 'That email does not look right.'; return; }
       if (id === S.me.id && !row.is_admin) { $e.textContent = 'You cannot remove your own admin access.'; return; }
@@ -1122,7 +1131,7 @@
       EV_STATUS[e.status] + '<span class="chip">+' + evPoints(e) + ' points</span>');
     if (partners.length) chips += '<span class="chip sky">Collab with ' + esc(partners.join(', ')) + '</span>';
     var h = '<div class="task" data-ev="' + e.id + '">' +
-      '<div class="row" style="align-items:flex-start;gap:12px"><div class="av">' + esc(initials(p.name)) + '</div><div style="min-width:0;flex:1">' +
+      '<div class="row" style="align-items:flex-start;gap:12px">' + avatar(p, '') + '<div style="min-width:0;flex:1">' +
       '<div class="t-title">' + esc(e.title) + '</div>' +
       '<div class="t-meta">' + esc(first(p.name)) + ' · ' + esc(meta.join(' · ')) + '</div></div></div>' +
       '<div class="row wrap" style="gap:6px">' + chips + '</div>';
@@ -1245,7 +1254,7 @@
     function pod(r, place) {
       if (!r) return '<div></div>';
       var hgt = place === 1 ? 128 : place === 2 ? 96 : 76;
-      return '<div class="pod"><div class="av ' + (place === 1 ? 'gold' : '') + '">' + esc(initials(r.p.name)) + '</div>' +
+      return '<div class="pod">' + avatar(r.p, place === 1 ? 'gold' : '') +
         '<b>' + esc(first(r.p.name)) + '</b><span class="tiny">' + esc((r.p.chapter || '').split(',')[0]) + '</span>' +
         '<div class="pod-bar p' + place + '" style="height:' + hgt + 'px"><b>' + place + '</b><span>' + r.s.points + ' pts</span></div></div>';
     }
@@ -1267,7 +1276,7 @@
       var meRow = r.p.id === S.me.id;
       var tag = canSee(r.p) ? 'a' : 'div';
       return '<' + tag + ' class="person"' + (tag === 'a' ? ' href="#/person/' + r.p.id + '"' : '') + ' style="' + (meRow ? 'background:var(--lav)' : '') + '">' +
-        '<b style="width:26px;font-size:16px">' + (i + 1) + '</b><div class="av">' + esc(initials(r.p.name)) + '</div><div style="min-width:0;flex:1">' +
+        '<b style="width:26px;font-size:16px">' + (i + 1) + '</b>' + avatar(r.p, '') + '<div style="min-width:0;flex:1">' +
         '<div class="nm">' + esc(r.p.name) + (meRow ? ' <span class="chip navy">You</span>' : '') + '</div>' +
         '<div class="muted small">' + esc((r.p.chapter || 'Student Lead').split(',')[0]) + ' · ' + r.s.events + (r.s.events === 1 ? ' event' : ' events') + ' · ' + r.s.reached + ' reached</div></div>' +
         '<b style="font-size:18px">' + r.s.points + '</b></' + tag + '>';
@@ -1327,14 +1336,14 @@
 
     h += '<div class="sec-h"><h2>Top Student Leads this month</h2><a class="linkbtn" href="#/leaderboard">Leaderboard</a></div>' +
       '<div class="card flush list">' + (ranked.length ? ranked.map(function (r, i) {
-        return '<div class="person"><b style="width:22px;font-size:17px">' + (i + 1) + '</b><div class="av' + (i === 0 ? ' gold' : '') + '">' + esc(initials(r.p.name)) + '</div><div style="flex:1;min-width:0"><div class="nm">' + esc(r.p.name) + '</div>' +
+        return '<div class="person"><b style="width:22px;font-size:17px">' + (i + 1) + '</b>' + avatar(r.p, i === 0 ? 'gold' : '') + '<div style="flex:1;min-width:0"><div class="nm">' + esc(r.p.name) + '</div>' +
           '<div class="muted small">' + esc((r.p.chapter || '').split(',')[0]) + '</div></div><b>' + r.s.points + ' pts</b></div>';
       }).join('') : '<div class="empty">No approved events this month yet.</div>') + '</div>';
 
     if (wins.length) {
       h += '<div class="sec-h"><h2>Recent wins</h2><a class="linkbtn" href="#/events">All events</a></div><div class="card flush list">' + wins.map(function (e) {
         var partners = (e.collab_with || []).map(function (id) { return first(nameOf(id)); });
-        return '<div class="person"><div class="av">' + esc(initials(nameOf(e.person))) + '</div><div style="min-width:0;flex:1"><div class="nm" style="font-size:14.5px">' +
+        return '<div class="person">' + avatar(S.byId[e.person], '') + '<div style="min-width:0;flex:1"><div class="nm" style="font-size:14.5px">' +
           esc(first(nameOf(e.person)) + (partners.length ? ' and ' + partners.join(', ') : '') + ' hosted ' + e.title) + '</div>' +
           '<div class="muted small">' + esc(ruleLabel(e.type) + (e.attendees != null ? ' · ' + e.attendees + ' joined' : '') + ' · ' + fmtDay(e.day)) + '</div></div><span class="chip ok">+' + evPoints(e) + '</span></div>';
       }).join('') + '</div>';

@@ -238,3 +238,5 @@ textarea.input{height:auto;min-height:88px;padding:10px 12px;resize:vertical}
   .nav{max-width:calc(100vw - 32px);width:fit-content;flex-wrap:wrap;gap:4px}
   .nav a{padding:8px 12px;font-size:13.5px}
 }
+.av.photo{padding:0;overflow:hidden;background:#fff}
+.av.photo img{width:100%;height:100%;object-fit:cover;display:block}
