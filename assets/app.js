@@ -40,7 +40,7 @@
   function avatar(p, cls) {
     cls = cls ? ' ' + cls.trim() : '';
     if (!p) return '<div class="av' + cls + '">?</div>';
-    if (p.photo) return '<div class="av photo' + cls + '"><img src="assets/photos/' + esc(p.photo) + '?v=1" alt="" loading="lazy"></div>';
+    if (p.photo) return '<div class="av photo' + cls + '"><img src="assets/photos/' + esc(p.photo) + '?v=2" alt="" loading="lazy"></div>';
     return '<div class="av' + cls + '">' + esc(initials(p.name)) + '</div>';
   }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -604,27 +604,9 @@
         done.map(function (t) { return taskHtml(t, p); }).join('') + '</div>';
     }
 
-    if (self) {
-      h += '<details class="card"><summary style="cursor:pointer;font-weight:600">Change my password</summary>' +
-        '<form id="pw-form" class="stack" style="margin-top:12px" novalidate>' +
-        '<div class="field"><label class="lbl" for="pw1">New password</label><input class="input" id="pw1" type="password" autocomplete="new-password" minlength="8"></div>' +
-        '<div class="field"><label class="lbl" for="pw2">Type it again</label><input class="input" id="pw2" type="password" autocomplete="new-password"></div>' +
-        '<div class="err" id="pw-err" role="alert"></div><button class="btn primary" type="submit">Save password</button></form></details>';
-    }
     h += '</div>';
     $view.innerHTML = h;
 
-    var pw = document.getElementById('pw-form');
-    if (pw) pw.addEventListener('submit', async function (ev) {
-      ev.preventDefault();
-      var a = document.getElementById('pw1').value, b = document.getElementById('pw2').value, $e = document.getElementById('pw-err');
-      $e.textContent = '';
-      if (a.length < 8) { $e.textContent = 'Use at least 8 characters.'; return; }
-      if (a !== b) { $e.textContent = 'The two passwords do not match.'; return; }
-      var r = await sb.auth.updateUser({ password: a });
-      if (r.error) { $e.textContent = r.error.message; return; }
-      pw.reset(); toast('Password changed');
-    });
   }
 
   function checkinSummary(c, mine) {
@@ -1031,7 +1013,7 @@
       '<li>Make sure the person is in the list below with their email (Add person or Edit).</li>' +
       '<li>Open Supabase, go to <b>Authentication</b>, then <b>Users</b>, then <b>Add user</b>, then <b>Create new user</b>.</li>' +
       '<li>Type the same email and a password, tick <b>Auto Confirm User</b>, and create.</li>' +
-      '<li>Send them the link to this site and their password on WhatsApp. They can change it from My page.</li>' +
+      '<li>Send them the link to this site and their password on WhatsApp. Ask them to keep it safe.</li>' +
       '<li>To reset a forgotten password: Supabase, Authentication, Users, open the person, and set a new password.</li></ol></details>' +
       '<div class="sec-h"><h2>People (' + people.length + ')</h2></div><div class="card flush list">' +
       people.map(function (p) {
@@ -1774,7 +1756,7 @@
     cv.width = W; cv.height = H;
     var c = cv.getContext('2d');
     try { await document.fonts.load('700 60px "Space Grotesk"'); await document.fonts.load('500 30px "Space Grotesk"'); } catch (e) { /* fallback font */ }
-    var photo = d.p && d.p.photo ? await loadImg('assets/photos/' + d.p.photo + '?v=1') : null;
+    var photo = d.p && d.p.photo ? await loadImg('assets/photos/' + d.p.photo + '?v=2') : null;
     var logo = await loadImg('assets/logo.png');
     c.fillStyle = VIOLET; c.fillRect(0, 0, W, H);
     c.lineWidth = 6; c.strokeStyle = INK;
